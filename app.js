@@ -1,15 +1,15 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, limitToLast,
-  onSnapshot, addDoc, serverTimestamp, increment, writeBatch, getDocs }
+import { initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, limitToLast,
+  onSnapshot, addDoc, where, serverTimestamp, increment, writeBatch, getDocs }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig, OWNER_EMAIL } from "./firebase-config.js";
 
 /* ---------------- helpers ---------------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const S = { user: null, me: null, users: new Map(), chat: null, unsub: {}, view: "boot" };
+const S = { user: null, me: null, users: new Map(), chats: [], chat: null, found: null, unsub: {}, view: "boot" };
 const dayKey = (d = new Date()) => "d_" + d.toLocaleDateString("en-CA");
 const toDate = t => (t && t.toDate ? t.toDate() : null);
 const fmtDT = t => { const d = toDate(t); return d ? d.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" }) : "—"; };
@@ -53,6 +53,20 @@ $("#modal").addEventListener("mousedown", e => { if (e.target.id === "modal") cl
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
 
 /* ---------------- firebase ---------------- */
+const withTimeout = (p, ms = 15000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(Object.assign(new Error("timeout"), { code: "timeout" })), ms))]);
+function explain(e) {
+  const c = (e && e.code) || "";
+  if (c.includes("permission-denied")) return "القواعد (Rules) مش متظبطة في Firestore. الصق firestore.rules واضغط Publish.";
+  if (c.includes("not-found")) return "قاعدة بيانات Firestore مش موجودة. اعمل Create database الأول.";
+  if (c.includes("unavailable") || c === "timeout") return "الموقع مش عارف يوصل لقاعدة البيانات. اتأكد إن Firestore اتعمل وإن النت شغال.";
+  return "حصل خطأ غير متوقع.";
+}
+async function fail(e) {
+  console.error(e);
+  $("#loginMsg").textContent = explain(e) + " (" + ((e && (e.code || e.message)) || "") + ")";
+  try { await signOut(auth); } catch {}
+  show("login"); $("#googleBtn").disabled = false;
+}
 const configured = !String(firebaseConfig.apiKey).startsWith("PASTE");
 let auth, db;
 if (!configured) {
@@ -61,10 +75,11 @@ if (!configured) {
   $("#loginMsg").textContent = "لازم تلصق إعدادات Firebase في ملف firebase-config.js الأول.";
 } else {
   const fb = initializeApp(firebaseConfig);
-  auth = getAuth(fb); db = getFirestore(fb);
+  auth = getAuth(fb); db = initializeFirestore(fb, { experimentalAutoDetectLongPolling: true });
   countVisit();
   getRedirectResult(auth).catch(loginError);
   onAuthStateChanged(auth, onAuth);
+  setTimeout(() => { if (S.view === "boot") fail(Object.assign(new Error("boot"), { code: "timeout" })); }, 20000);
 }
 
 function countVisit() {
@@ -97,7 +112,8 @@ $("#bannedOut").onclick = doSignOut;
 
 function cleanup() {
   Object.values(S.unsub).forEach(f => f && f());
-  S.unsub = {}; S.me = null; S.chat = null; S.users = new Map();
+  clearInterval(S.beatT); clearInterval(S.tickT); clearTimeout(S.typT);
+  S.unsub = {}; S.me = null; S.chat = null; S.users = new Map(); S.chats = []; S.found = null;
 }
 
 async function onAuth(user) {
@@ -106,12 +122,12 @@ async function onAuth(user) {
   S.user = user;
   try {
     const ref = doc(db, "users", user.uid);
-    const snap = await getDoc(ref);
+    const snap = await withTimeout(getDoc(ref));
     const owner = isOwnerUser(user);
     const logIt = () => addDoc(collection(db, "logins"), { uid: user.uid, name: (user.displayName || "مستخدم").slice(0, 40), at: serverTimestamp() }).catch(() => {});
     if (!snap.exists()) {
       const base = { uid: user.uid, name: (user.displayName || "مستخدم").slice(0, 40), email: user.email || "", createdAt: serverTimestamp(), lastLogin: serverTimestamp(), loginCount: 1, onboarded: false };
-      await setDoc(ref, owner ? { ...base, verified: true, role: "owner" } : base);
+      await withTimeout(setDoc(ref, owner ? { ...base, verified: true, role: "owner" } : base));
       sessionStorage.es_login = "1"; logIt();
     } else {
       if (!sessionStorage.es_login) {
@@ -121,11 +137,9 @@ async function onAuth(user) {
       const d = snap.data();
       if (owner && (!d.verified || d.role !== "owner")) updateDoc(ref, { verified: true, role: "owner" }).catch(() => {});
     }
-    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); route(); }, e => { console.error(e); toast("تعذّر تحميل الحساب — راجع قواعد Firestore"); });
+    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); route(); }, e => fail(e));
   } catch (e) {
-    console.error(e); await signOut(auth);
-    $("#loginMsg").textContent = "مقدرتش أحمّل حسابك. اتأكد إنك لصقت firestore.rules في Firebase. (" + (e.code || e.message) + ")";
-    show("login");
+    await fail(e);
   }
 }
 
@@ -229,82 +243,156 @@ function paintMe() {
   $("#whoami").textContent = "@" + (me.username || "");
   $("#ownerBtn").classList.toggle("hidden", !isOwner());
 }
+async function getUser(uid, force = false) {
+  if (!force && S.users.has(uid)) return S.users.get(uid);
+  try { const s = await getDoc(doc(db, "users", uid)); if (s.exists()) { S.users.set(uid, s.data()); return s.data(); } } catch (e) { console.error(e); }
+  return null;
+}
+async function ensureUsers(uids) {
+  const miss = [...new Set(uids)].filter(u => u && !S.users.has(u));
+  if (!miss.length) return false;
+  await Promise.all(miss.map(u => getUser(u))); return true;
+}
+const peerOf = c => c.members.find(m => m !== S.user.uid);
+const ONLINE_MS = 100000;
+const isOnline = u => { const t = toDate(u && u.lastSeen); return !!t && Date.now() - t.getTime() < ONLINE_MS; };
+
+/* حضور المستخدم: بنسجّل آخر ظهور كل دقيقة طول ما الصفحة مفتوحة */
+function beat() { if (S.user && S.view === "app") updateDoc(doc(db, "users", S.user.uid), { lastSeen: serverTimestamp() }).catch(() => {}); }
+document.addEventListener("visibilitychange", beat);
+addEventListener("pagehide", beat);
+
 function enterApp() {
   show("app"); paintMe();
   $("#ownerBtn").innerHTML = CROWN; $("#ownerBtn").classList.add("owner");
-  S.unsub.users = onSnapshot(query(collection(db, "users"), limit(500)), snap => {
-    S.users = new Map(snap.docs.map(d => [d.id, d.data()]));
-    renderList(); if (S.chat) paintHead();
+  if (isOwner()) S.unsub.users = onSnapshot(query(collection(db, "users"), limit(500)), snap => { snap.docs.forEach(d => S.users.set(d.id, d.data())); }, e => console.error(e));
+  S.chats = [];
+  S.unsub.chats = onSnapshot(query(collection(db, "chats"), where("members", "array-contains", S.user.uid)), async snap => {
+    S.chats = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.lastAt);
+    await ensureUsers(S.chats.map(peerOf)); renderList();
   }, e => console.error(e));
-  renderList(); openChat("public", true);
+  beat(); S.beatT = setInterval(() => { if (document.visibilityState === "visible") beat(); }, 60000);
+  let n = 0;
+  S.tickT = setInterval(async () => {
+    if (S.view !== "app") return;
+    if (S.chat && S.chat.peer) paintHead();
+    if (++n % 3 === 0) { await Promise.all(S.chats.map(c => getUser(peerOf(c), true))); renderList(); }
+  }, 20000);
+  renderList(); showEmpty();
+}
+function showEmpty() {
+  S.chat = null; if (S.unsub.msgs) S.unsub.msgs(); if (S.unsub.peerDoc) S.unsub.peerDoc(); if (S.unsub.chatDoc) S.unsub.chatDoc();
+  $("#chatHead").innerHTML = ""; $("#composerWrap").classList.add("hidden");
+  $("#messages").innerHTML = `<div class="empty"><div class="big">ES Chat Pro</div><p>ابحث عن صاحبك بالـ @يوزر عشان تبدأ محادثة.</p></div>`;
+  $("#app").classList.remove("open");
 }
 $("#meBtn").onclick = () => { const sh = openModal(`<div id="editBox"></div>`); renderForm(sh.querySelector("#editBox"), "edit"); };
 $("#ownerBtn").onclick = () => openOwner();
-$("#search").oninput = renderList;
-$("#back").onclick = () => $("#app").classList.remove("open");
+$("#back").onclick = () => { $("#app").classList.remove("open"); };
 $("#chatHead").onclick = () => { if (S.chat && S.chat.peer) openProfile(S.chat.peer); };
+$("#whoami").onclick = () => { const t = "@" + (S.me.username || ""); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast("اتنسخ اليوزر " + t), () => toast(t)); };
+
+/* البحث: بالـ username بالظبط فقط، مفيش قايمة أعضاء */
+let searchT;
+$("#search").oninput = () => { S.found = null; renderList(); clearTimeout(searchT); searchT = setTimeout(doSearch, 400); };
+async function doSearch() {
+  const term = $("#search").value.trim().toLowerCase().replace(/^@/, "");
+  if (!/^[a-z0-9_]{3,20}$/.test(term)) { S.found = null; return renderList(); }
+  try {
+    const s = await getDoc(doc(db, "usernames", term));
+    if ($("#search").value.trim().toLowerCase().replace(/^@/, "") !== term) return;
+    if (!s.exists()) S.found = { none: true };
+    else if (s.data().uid === S.user.uid) S.found = { self: true };
+    else { const u = await getUser(s.data().uid); S.found = u ? { uid: s.data().uid, u } : { none: true }; }
+  } catch (e) { console.error(e); S.found = { none: true }; }
+  renderList();
+}
 
 function renderList() {
+  if (S.view !== "app") return;
   const term = $("#search").value.trim().toLowerCase().replace(/^@/, "");
-  const people = [...S.users.entries()]
-    .filter(([id, u]) => id !== S.user.uid && u.onboarded && (!term || (u.name || "").toLowerCase().includes(term) || (u.username || "").includes(term)))
-    .sort((a, b) => (toDate(b[1].lastLogin)?.getTime() || 0) - (toDate(a[1].lastLogin)?.getTime() || 0));
-  let h = "";
-  if (!term || "الغرفة العامة".includes(term)) {
-    h += `<div class="section">الغرفة العامة</div>
+  let h = `<div class="section">الغرفة العامة</div>
     <div class="chat-item ${S.chat && S.chat.id === "public" ? "active" : ""}" data-open="public"><div class="avatar public">ES</div>
       <div class="chat-meta"><div class="name">الغرفة العامة</div><div class="preview">محادثة مفتوحة لكل الأعضاء</div></div></div>`;
+  if (term) {
+    h += `<div class="section">نتيجة البحث</div>`;
+    const f = S.found;
+    if (f && f.uid) h += `<div class="chat-item" data-open="${esc(f.uid)}">${avatar(f.u)}<div class="chat-meta"><div class="name">${esc(f.u.name)}${badge(f.u, 15)}</div><div class="preview">@${esc(f.u.username)}</div></div></div>`;
+    else if (f && f.self) h += `<div class="empty-list">ده اليوزر بتاعك 🙂</div>`;
+    else if (f && f.none) h += `<div class="empty-list">مفيش حد بالـ username ده. اتأكد إنه مكتوب صح.</div>`;
+    else h += `<div class="empty-list">اكتب اليوزر كامل (3 حروف على الأقل)...</div>`;
   }
-  h += `<div class="section">الأعضاء</div>`;
-  h += people.length ? people.map(([id, u]) => `<div class="chat-item ${S.chat && S.chat.peer === id ? "active" : ""}" data-open="${esc(id)}">${avatar(u)}
-      <div class="chat-meta"><div class="name">${esc(u.name)}${badge(u, 15)}</div><div class="preview">@${esc(u.username)}${u.bio ? " · " + esc(u.bio) : ""}</div></div></div>`).join("")
-    : `<div class="empty-list">${term ? "مفيش نتايج للبحث ده." : "لسه مفيش أعضاء تانيين. شارك رابط الموقع."}</div>`;
+  h += `<div class="section">محادثاتك</div>`;
+  const chats = [...S.chats].sort((a, b) => (toDate(b.lastAt)?.getTime() || 0) - (toDate(a.lastAt)?.getTime() || 0));
+  h += chats.length ? chats.map(c => {
+    const pid = peerOf(c), u = S.users.get(pid) || { name: "مستخدم" };
+    return `<div class="chat-item ${S.chat && S.chat.peer === pid ? "active" : ""}" data-open="${esc(pid)}"><div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div>
+      <div class="chat-meta"><div class="name">${esc(u.name)}${badge(u, 15)}</div><div class="preview">${c.lastUid === S.user.uid ? "أنت: " : ""}${esc(c.lastText || "")}</div></div></div>`;
+  }).join("") : `<div class="empty-list">مفيش محادثات لسه.<br>اطلب من صاحبك الـ @username بتاعه وابحث بيه فوق.</div>`;
   $("#list").innerHTML = h;
 }
 $("#list").addEventListener("click", e => {
   const it = e.target.closest("[data-open]"); if (!it) return;
-  const v = it.dataset.open; v === "public" ? openChat("public") : openChat("dm", v);
+  const v = it.dataset.open; openChat(v === "public" ? null : v);
 });
 
+function statusOf(u, c) {
+  if (c && c.peer) {
+    const ty = S.chat && S.chat.typingAt && Date.now() - S.chat.typingAt < 5000;
+    if (ty) return { t: "يكتب...", cls: "typing" };
+    if (isOnline(u)) return { t: "متصل", cls: "online" };
+    const ls = toDate(u && u.lastSeen);
+    if (ls) return { t: "آخر ظهور " + dayLabel(ls) + " " + fmtTime(ls), cls: "" };
+  }
+  return { t: "", cls: "" };
+}
 function paintHead() {
   const c = S.chat; if (!c) return;
-  if (c.id === "public") {
-    $("#chatHead").innerHTML = `<div class="avatar public">ES</div><div class="t"><b>الغرفة العامة</b><small>${S.users.size} عضو</small></div>`;
-  } else {
-    const u = S.users.get(c.peer) || {};
-    $("#chatHead").innerHTML = `${avatar(u)}<div class="t"><b>${esc(u.name || "مستخدم")}${badge(u, 16)}</b><small>@${esc(u.username || "")}</small></div>`;
-  }
+  if (!c.peer) { $("#chatHead").innerHTML = `<div class="avatar public">ES</div><div class="t"><b>الغرفة العامة</b><small>محادثة مفتوحة لكل الأعضاء</small></div>`; return; }
+  const u = S.users.get(c.peer) || {}, st = statusOf(u, c);
+  $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b>${esc(u.name || "مستخدم")}${badge(u, 16)}</b><small class="st ${st.cls}">${esc(st.t || "@" + (u.username || ""))}</small></div>`;
 }
 
-function openChat(type, peer) {
-  if (S.unsub.msgs) S.unsub.msgs();
-  const id = type === "public" ? "public" : [S.user.uid, peer].sort().join("_");
-  S.chat = { id, peer: type === "public" ? null : peer, first: true };
-  paintHead(); renderList();
-  $("#composerWrap").classList.remove("hidden");
-  if (peer !== true) $("#app").classList.add("open");
-  if (peer === true) $("#app").classList.remove("open");
-  $("#messages").innerHTML = "";
+function openChat(peer) {
+  if (S.unsub.msgs) S.unsub.msgs(); if (S.unsub.peerDoc) S.unsub.peerDoc(); if (S.unsub.chatDoc) S.unsub.chatDoc();
+  clearTimeout(S.typT);
+  const id = peer ? [S.user.uid, peer].sort().join("_") : "public";
+  S.chat = { id, peer: peer || null, first: true, lastTyping: undefined, typingAt: 0, sentTyping: 0 };
+  $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open");
+  $("#messages").innerHTML = ""; paintHead(); renderList();
   S.unsub.msgs = onSnapshot(query(collection(db, "chats", id, "messages"), orderBy("at"), limitToLast(150)),
-    snap => renderMsgs(snap.docs), e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
+    snap => { S.chat && S.chat.id === id && renderMsgs(snap.docs); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
+  if (peer) {
+    getUser(peer).then(paintHead);
+    S.unsub.peerDoc = onSnapshot(doc(db, "users", peer), s => { if (s.exists() && S.chat && S.chat.peer === peer) { S.users.set(peer, s.data()); paintHead(); } }, () => {});
+    S.unsub.chatDoc = onSnapshot(doc(db, "chats", id), s => {
+      if (!S.chat || S.chat.id !== id) return;
+      const t = (s.exists() && s.data().typing && s.data().typing[peer]) || 0;
+      if (!t) S.chat.typingAt = 0;
+      else if (S.chat.lastTyping !== undefined && t !== S.chat.lastTyping) { S.chat.typingAt = Date.now(); clearTimeout(S.typT); S.typT = setTimeout(paintHead, 5200); }
+      S.chat.lastTyping = t; paintHead();
+    }, () => {});
+  }
 }
 
 function renderMsgs(docs) {
   const box = $("#messages"), near = box.scrollHeight - box.scrollTop - box.clientHeight < 140 || S.chat.first;
-  const pub = S.chat.id === "public", canDelAll = isOwner() && pub;
+  const pub = !S.chat.peer, canDelAll = isOwner() && pub;
+  S.chat.lastDocs = docs;
   if (!docs.length) {
     box.innerHTML = `<div class="empty"><div class="big">${pub ? "الغرفة فاضية" : "ابدأ المحادثة"}</div><p>اكتب أول رسالة من الأسفل.</p></div>`;
     S.chat.first = false; return;
   }
+  if (pub) ensureUsers(docs.map(d => d.data().uid)).then(ch => { if (ch && S.chat && !S.chat.peer) renderMsgs(S.chat.lastDocs); });
   let last = "", h = "";
   for (const d of docs) {
     const m = d.data({ serverTimestamps: "estimate" }), dt = toDate(m.at) || new Date(), mine = m.uid === S.user.uid;
     const lbl = dayLabel(dt); if (lbl !== last) { h += `<div class="date-sep">${esc(lbl)}</div>`; last = lbl; }
     const sender = S.users.get(m.uid) || {};
-    h += `<div class="msg ${mine ? "me" : "them"}">
-      ${pub && !mine ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : ""}
-      <span>${esc(m.text)}</span>
-      <div class="tm">${(mine || canDelAll) ? `<button class="del" data-del="${esc(d.id)}">حذف</button>` : ""}<span>${fmtTime(dt)}</span></div></div>`;
+    h += `<div class="msg ${mine ? "me" : "them"}">`
+      + (pub && !mine ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : "")
+      + `<div class="txt">${esc(m.text)}</div>`
+      + `<div class="tm">${(mine || canDelAll) ? `<button class="del" data-del="${esc(d.id)}">حذف</button>` : ""}<span>${fmtTime(dt)}</span></div></div>`;
   }
   box.innerHTML = h;
   if (near) box.scrollTop = box.scrollHeight;
@@ -315,12 +403,23 @@ $("#messages").addEventListener("click", async e => {
   const b = e.target.closest("[data-del]");
   if (b && confirm("تحذف الرسالة دي؟")) deleteDoc(doc(db, "chats", S.chat.id, "messages", b.dataset.del)).catch(() => toast("مقدرتش أحذف الرسالة"));
 });
+
+const chatRef = () => doc(db, "chats", S.chat.id);
+const membersOf = () => [S.user.uid, S.chat.peer].sort();
+$("#input").addEventListener("input", () => {
+  const c = S.chat; if (!c || !c.peer || !$("#input").value.trim()) return;
+  if (Date.now() - c.sentTyping < 2500) return;
+  c.sentTyping = Date.now();
+  setDoc(chatRef(), { members: membersOf(), typing: { [S.user.uid]: Date.now() } }, { merge: true }).catch(() => {});
+});
 $("#form").onsubmit = async e => {
   e.preventDefault();
   const text = $("#input").value.trim(); if (!text || !S.chat) return;
-  $("#input").value = "";
-  try { await addDoc(collection(db, "chats", S.chat.id, "messages"), { uid: S.user.uid, text, at: serverTimestamp() }); }
-  catch (er) { console.error(er); $("#input").value = text; toast("الرسالة ماتبعتتش"); }
+  $("#input").value = ""; const c = S.chat;
+  try {
+    await addDoc(collection(db, "chats", c.id, "messages"), { uid: S.user.uid, text, at: serverTimestamp() });
+    if (c.peer) { c.sentTyping = 0; setDoc(chatRef(), { members: membersOf(), lastText: text.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, typing: { [S.user.uid]: 0 } }, { merge: true }).catch(e => console.error(e)); }
+  } catch (er) { console.error(er); $("#input").value = text; toast("الرسالة ماتبعتتش"); }
 };
 
 /* ---------------- profile view ---------------- */
@@ -344,7 +443,7 @@ async function openProfile(uid, opts = {}) {
   </div>`);
   const on = (id, f) => { const el = sh.querySelector(id); if (el) el.onclick = f; };
   on("#pEdit", () => $("#meBtn").click());
-  on("#pMsg", () => { closeModal(); openChat("dm", uid); });
+  on("#pMsg", () => { closeModal(); openChat(uid); });
   on("#pBack", openOwner);
   on("#pVer", async () => { await updateDoc(doc(db, "users", uid), { verified: !u.verified }); toast("تم"); openProfile(uid, opts); });
   on("#pBan", async () => { await updateDoc(doc(db, "users", uid), { banned: !u.banned }); toast("تم"); openProfile(uid, opts); });
