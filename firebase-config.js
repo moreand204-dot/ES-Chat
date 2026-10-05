@@ -15,4 +15,4 @@ export const OWNER_EMAIL = "moreand458@gmail.com";
 
 // مفتاح الإشعارات (VAPID): Firebase Console ← Project settings ← Cloud Messaging ← Web Push certificates ← Generate key pair
 // سيبه فاضي لو مش عايز إشعارات والموقع مقفول (الإشعارات وهو مفتوح بتشتغل من غيره).
-export const VAPID_KEY = "";
+export const VAPID_KEY = "BDw61_fYSnEQyDUFQMyJRNDxRtPN4_paW9ozYHZQaxykg3w1kd2m2effEROgrScgDyvR_821BNx-HEOPiFMwn8Y";
