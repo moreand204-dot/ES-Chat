@@ -54,13 +54,14 @@
     <div class="top">
       <div class="brand"><img src="assets/logo-128.png" alt="" class="logo"><div><b>ES Chat Pro</b><small id="whoami"></small></div></div>
       <div class="top-actions">
+        <button class="icon" id="newBtn" title="جديد" aria-label="جديد"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg></button>
         <button class="icon hidden" id="ownerBtn" title="لوحة المالك"></button>
         <button class="icon" id="meBtn" title="حسابي"></button>
       </div>
     </div>
     <div id="annBar" class="ann hidden"></div>
     <div id="notifBar" class="notif-bar hidden"></div>
-    <label class="searchbox"><svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="search" placeholder="ابحث باليوزر، مثال: @ahmed"></label>
+    <label class="searchbox"><svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="search" placeholder="ابحث باليوزر @ أو بالقناة #"></label>
     <div class="chips-row" id="chipsRow"></div>
     <div class="list" id="list"></div>
   </aside>
@@ -75,6 +76,7 @@
     <div class="composer-wrap hidden" id="composerWrap">
       <div id="replyBar" class="reply-bar hidden"></div>
       <div id="quickPop" class="quick-pop hidden"></div>
+      <div id="roBar" class="ro-bar hidden"></div>
       <form class="composer" id="form">
         <button type="button" class="attach" id="attachBtn" aria-label="إرفاق"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6L15 7.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <input id="input" placeholder="اكتب رسالة..." autocomplete="off" maxlength="2000">

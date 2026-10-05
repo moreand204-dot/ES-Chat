@@ -248,3 +248,21 @@ button{cursor:pointer}
 .seg3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 6px}
 .seg3 button{height:40px;border-radius:12px;border:1px solid var(--line);background:var(--ink);color:var(--muted)}
 .seg3 button.on{border-color:var(--blue);color:var(--text);background:color-mix(in srgb,var(--blue) 22%,var(--ink))}
+
+/* ---------- v5: groups, channels, diagnostics ---------- */
+.avatar.chan{border-radius:16px}
+.avatar.grp{background:linear-gradient(145deg,#1d3a8a,#0b1642)}
+.avatar.chan{background:linear-gradient(145deg,#2a1f6b,#0e0a35)}
+.inline-add{display:flex;gap:8px}.inline-add input{flex:1;min-width:0;background:var(--ink);border:1px solid var(--line);border-radius:13px;padding:11px 14px;outline:0}
+.inline-add input:focus{border-color:var(--blue)}
+.chips-wrap{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.m-chip{background:color-mix(in srgb,var(--blue) 22%,var(--ink));border:1px solid color-mix(in srgb,var(--blue) 50%,transparent);padding:5px 12px;border-radius:14px;font-size:12.5px;cursor:pointer}
+.chip.sm{font-size:10.5px;padding:2px 8px;vertical-align:middle}
+.ro-bar{margin:0 6px 6px;padding:12px;border:1px solid var(--line);background:var(--panel);border-radius:16px;text-align:center;color:var(--muted);font-size:13px;display:grid;place-items:center}
+.ro-bar .btn-primary{width:100%}
+.pc{display:flex;gap:12px;align-items:flex-start;padding:11px 4px;border-bottom:1px solid #10205a}
+.pc b{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;flex:0 0 22px;font-size:13px}
+.pc.ok b{background:#0f4a36;color:var(--ok)}.pc.bad b{background:#4a1224;color:#ff8fa5}
+.pc span{display:block;font-size:14px}.pc small{display:block;color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.7}
+.pc.bad span{color:#ffb3c1}
+.sheet.wide .row-item .end{display:flex;gap:6px;align-items:center}
