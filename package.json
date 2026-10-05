@@ -1,0 +1,6 @@
+{
+  "name": "es-chat-pro",
+  "private": true,
+  "version": "2.0.0",
+  "dependencies": { "firebase-admin": "^12.6.0" }
+}

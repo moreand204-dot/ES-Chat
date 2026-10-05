@@ -2,14 +2,20 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, limitToLast,
-  onSnapshot, addDoc, where, serverTimestamp, increment, writeBatch, getDocs }
+  onSnapshot, addDoc, where, serverTimestamp, increment, writeBatch, getDocs, deleteField }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { firebaseConfig, OWNER_EMAIL } from "./firebase-config.js";
+import * as CFG from "./firebase-config.js";
+const { firebaseConfig, OWNER_EMAIL } = CFG;
+const VAPID_KEY = CFG.VAPID_KEY || "";
 
 /* ---------------- helpers ---------------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const S = { user: null, me: null, users: new Map(), chats: [], chat: null, found: null, unsub: {}, view: "boot" };
+const S = { user: null, me: null, users: new Map(), chats: [], chat: null, found: null, site: {}, seen: new Map(), unsub: {}, view: "boot" };
+const LS = {
+  get: (k, d) => { try { const v = localStorage.getItem("es_" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set: (k, v) => { try { localStorage.setItem("es_" + k, JSON.stringify(v)); } catch {} },
+};
 const dayKey = (d = new Date()) => "d_" + d.toLocaleDateString("en-CA");
 const toDate = t => (t && t.toDate ? t.toDate() : null);
 const fmtDT = t => { const d = toDate(t); return d ? d.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" }) : "—"; };
@@ -38,7 +44,7 @@ const isOwner = () => isOwnerUser(S.user);
 
 function show(view) {
   S.view = view;
-  for (const id of ["boot", "login", "onboard", "banned", "app"]) $("#" + id).classList.toggle("hidden", id !== view);
+  for (const id of ["boot", "login", "onboard", "banned", "notice", "app"]) $("#" + id).classList.toggle("hidden", id !== view);
 }
 function closeModal() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide"); }
 function openModal(html, wide = false) {
@@ -68,13 +74,13 @@ async function fail(e) {
   show("login"); $("#googleBtn").disabled = false;
 }
 const configured = !String(firebaseConfig.apiKey).startsWith("PASTE");
-let auth, db;
+let auth, db, fbApp;
 if (!configured) {
   show("login");
   $("#googleBtn").disabled = true;
   $("#loginMsg").textContent = "لازم تلصق إعدادات Firebase في ملف firebase-config.js الأول.";
 } else {
-  const fb = initializeApp(firebaseConfig);
+  fbApp = initializeApp(firebaseConfig); const fb = fbApp;
   auth = getAuth(fb); db = initializeFirestore(fb, { experimentalAutoDetectLongPolling: true });
   countVisit();
   getRedirectResult(auth).catch(loginError);
@@ -109,23 +115,30 @@ $("#googleBtn").onclick = async () => {
 };
 const doSignOut = async () => { closeModal(); await signOut(auth); };
 $("#bannedOut").onclick = doSignOut;
+$("#noticeOut").onclick = doSignOut;
+function notice(t, p) { $("#noticeT").textContent = t; $("#noticeP").textContent = p; show("notice"); }
 
 function cleanup() {
   Object.values(S.unsub).forEach(f => f && f());
   clearInterval(S.beatT); clearInterval(S.tickT); clearTimeout(S.typT);
-  S.unsub = {}; S.me = null; S.chat = null; S.users = new Map(); S.chats = []; S.found = null;
+  S.unsub = {}; S.me = null; S.chat = null; S.users = new Map(); S.chats = []; S.found = null; S.site = {}; S.seen = new Map(); S.chatsLoaded = false; S.fcm = null;
 }
 
 async function onAuth(user) {
   cleanup(); closeModal();
   if (!user) { S.user = null; $("#googleBtn").disabled = false; show("login"); return; }
   S.user = user;
+  S.unsub.site = onSnapshot(doc(db, "settings", "site"), s => { S.site = s.data() || {}; siteChanged(); }, () => {});
   try {
     const ref = doc(db, "users", user.uid);
     const snap = await withTimeout(getDoc(ref));
     const owner = isOwnerUser(user);
     const logIt = () => addDoc(collection(db, "logins"), { uid: user.uid, name: (user.displayName || "مستخدم").slice(0, 40), at: serverTimestamp() }).catch(() => {});
     if (!snap.exists()) {
+      if (!owner) {
+        let sd = {}; try { sd = (await getDoc(doc(db, "settings", "site"))).data() || {}; } catch {}
+        if (sd.registrationOpen === false) { notice("التسجيل مقفول حاليًا", "الموقع مش بيقبل حسابات جديدة دلوقتي. جرّب بعدين."); return; }
+      }
       const base = { uid: user.uid, name: (user.displayName || "مستخدم").slice(0, 40), email: user.email || "", createdAt: serverTimestamp(), lastLogin: serverTimestamp(), loginCount: 1, onboarded: false };
       await withTimeout(setDoc(ref, owner ? { ...base, verified: true, role: "owner" } : base));
       sessionStorage.es_login = "1"; logIt();
@@ -146,6 +159,7 @@ async function onAuth(user) {
 function route() {
   const me = S.me; if (!me) return;
   if (me.banned && !isOwner()) { show("banned"); return; }
+  if (S.site.maintenance && !isOwner()) { notice("الموقع تحت الصيانة", S.site.maintenanceMsg || "هنرجع قريب. شكرًا على صبرك."); return; }
   if (!me.onboarded) { if (S.view !== "onboard") { show("onboard"); renderForm($("#onboardBox"), "onboard"); } return; }
   if (S.view !== "app") enterApp(); else paintMe();
 }
@@ -236,11 +250,161 @@ function renderForm(root, mode) {
   };
 }
 
+/* ---------------- الإشعارات والإعدادات ---------------- */
+const prefs = { get notifs() { return LS.get("notifs", true); }, get sound() { return LS.get("sound", true); }, get preview() { return LS.get("preview", true); } };
+const canNotify = () => "Notification" in window;
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("firebase-messaging-sw.js").catch(e => console.warn("sw", e));
+  navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.type === "open-chat") openFromId(e.data.chatId); });
+}
+function openFromId(chatId) {
+  if (!S.user || !chatId) return;
+  if (S.view !== "app") { S.pendingChat = chatId; return; }
+  const parts = chatId.split("_"), peer = parts.find(p => p !== S.user.uid);
+  if (parts.length === 2 && peer) openChat(peer);
+}
+let audioCtx;
+addEventListener("pointerdown", () => { try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch {} }, { once: true });
+function beep() {
+  if (!prefs.sound || !audioCtx) return;
+  try {
+    const t0 = audioCtx.currentTime;
+    [[880, 0], [1175, 0.11]].forEach(([f, d]) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "sine"; o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(0.0001, t0 + d); g.gain.exponentialRampToValueAtTime(0.18, t0 + d + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.18);
+      o.start(t0 + d); o.stop(t0 + d + 0.2);
+    });
+  } catch {}
+}
+async function showNotif(title, body, chatId) {
+  if (!canNotify() || Notification.permission !== "granted") return;
+  const opts = { body, icon: "assets/icon-192.png", badge: "assets/favicon-64.png", tag: chatId, renotify: true, dir: "rtl", lang: "ar", data: { chatId } };
+  try { const reg = await navigator.serviceWorker.ready; await reg.showNotification(title, opts); }
+  catch { try { new Notification(title, opts); } catch {} }
+}
+const uk = () => "unread_" + (S.user ? S.user.uid : "");
+const unreadMap = () => LS.get(uk(), {});
+function setUnread(id, n) { const m = unreadMap(); if (n) m[id] = n; else delete m[id]; LS.set(uk(), m); updateBadge(); }
+function updateBadge() {
+  const n = Object.values(unreadMap()).reduce((a, b) => a + b, 0);
+  document.title = (n ? "(" + n + ") " : "") + "ES Chat Pro";
+  try { n ? navigator.setAppBadge && navigator.setAppBadge(n) : navigator.clearAppBadge && navigator.clearAppBadge(); } catch {}
+}
+function markRead(chatId) {
+  const c = S.chats.find(x => x.id === chatId), ms = c ? toDate(c.lastAt)?.getTime() || 0 : 0;
+  LS.set("read_" + chatId, Math.max(Date.now(), ms));
+  if (unreadMap()[chatId]) { setUnread(chatId, 0); renderList(); }
+}
+async function onIncoming(chatId, d) {
+  await ensureUsers([peerOf(d)]);
+  const u = S.users.get(peerOf(d)) || { name: "رسالة جديدة" };
+  const here = document.visibilityState === "visible";
+  if (here && S.chat && S.chat.id === chatId) { markRead(chatId); return; }
+  setUnread(chatId, (unreadMap()[chatId] || 0) + 1); renderList();
+  if (!prefs.notifs) return;
+  const text = prefs.preview ? (d.lastText || "") : "رسالة جديدة";
+  if (here) toast(u.name + ": " + text); else showNotif(u.name, text, chatId);
+  beep();
+}
+function paintNotifBar() {
+  const bar = $("#notifBar");
+  if (!(canNotify() && Notification.permission === "default" && !LS.get("notifAsked", false))) { bar.classList.add("hidden"); return; }
+  bar.innerHTML = `<div class="nb-t"><b>فعّل الإشعارات</b><span>عشان توصلك الرسايل الجديدة حتى لو الموقع مقفول.</span></div><div class="nb-a"><button class="btn-mini" id="nbOn">تفعيل</button><button class="btn-mini ghost" id="nbLater">لاحقًا</button></div>`;
+  bar.classList.remove("hidden");
+  $("#nbOn").onclick = enableNotifs; $("#nbLater").onclick = () => { LS.set("notifAsked", true); paintNotifBar(); };
+}
+async function enableNotifs() {
+  if (!canNotify()) { toast("المتصفح ده مش بيدعم الإشعارات (على الآيفون لازم تضيف الموقع للشاشة الرئيسية)"); return "unsupported"; }
+  let p = Notification.permission;
+  if (p === "default") p = await Notification.requestPermission();
+  LS.set("notifAsked", true); paintNotifBar();
+  if (p === "granted") { LS.set("notifs", true); toast("الإشعارات اتفعلت"); registerPush(); }
+  else if (p === "denied") toast("الإشعارات مقفولة للموقع ده من إعدادات المتصفح");
+  return p;
+}
+async function registerPush() {
+  if (!VAPID_KEY || !S.user || !prefs.notifs || !canNotify() || Notification.permission !== "granted") return;
+  try {
+    const M = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js");
+    if (!(await M.isSupported())) return;
+    const reg = await navigator.serviceWorker.ready;
+    const token = await M.getToken(M.getMessaging(fbApp), { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if (!token || !S.user) return;
+    S.fcm = token;
+    await setDoc(doc(db, "users", S.user.uid, "tokens", token), { at: serverTimestamp(), ua: navigator.userAgent.slice(0, 120) });
+  } catch (e) { console.warn("push", e); }
+}
+async function unregisterPush() {
+  try {
+    if (!S.fcm || !VAPID_KEY) return;
+    const M = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js");
+    await deleteDoc(doc(db, "users", S.user.uid, "tokens", S.fcm)).catch(() => {});
+    await M.deleteToken(M.getMessaging(fbApp)); S.fcm = null;
+  } catch {}
+}
+async function pushNotify(chatId, text) {
+  if (!VAPID_KEY || !S.user) return;
+  try {
+    const t = await S.user.getIdToken();
+    fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ chatId, text: text.slice(0, 120) }) }).catch(() => {});
+  } catch {}
+}
+
+const switchRow = (id, on, label, sub) => `<label class="tg-row"><div><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</div><input type="checkbox" class="tg" id="${id}" ${on ? "checked" : ""}><span class="tg-ui"></span></label>`;
+function openEdit() { const sh = openModal(`<div id="editBox"></div>`); renderForm(sh.querySelector("#editBox"), "edit"); }
+function openSettings() {
+  const me = S.me, perm = canNotify() ? Notification.permission : "unsupported";
+  const note = perm === "denied" ? `<div class="hint err">الإشعارات مقفولة للموقع ده من إعدادات المتصفح. افتح إعدادات الموقع وفعّلها.</div>`
+    : perm === "unsupported" ? `<div class="hint">المتصفح ده مش بيدعم الإشعارات. على الآيفون ضيف الموقع للشاشة الرئيسية الأول.</div>` : "";
+  const sh = openModal(`<div class="prof" style="padding-top:6px">${avatar(me)}<h3>${esc(me.name)}${badge(me, 20)}</h3><div class="un"><bdi>@${esc(me.username || "")}</bdi></div></div>
+    <div class="actions"><button class="btn-primary" id="stEdit">تعديل البروفايل</button></div>
+    <div class="panel-h">الإشعارات</div>${note}
+    ${switchRow("stNotif", prefs.notifs && perm === "granted", "إشعارات الرسائل", "تنبيه لما حد يبعتلك")}
+    ${switchRow("stSound", prefs.sound, "صوت التنبيه")}
+    ${switchRow("stPrev", prefs.preview, "إظهار نص الرسالة", "لو اتقفل هيظهر «رسالة جديدة» بس")}
+    <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="stTest">جرّب إشعار</button></div>
+    <div class="panel-h">الخصوصية</div>
+    ${switchRow("stHide", !!me.hideLastSeen, "إخفاء حالتي", "محدش هيشوف إنك متصل أو آخر ظهور أو إنك بتكتب")}
+    <div class="actions" style="margin-top:22px"><button class="btn-ghost" id="stOut">تسجيل الخروج</button></div>`);
+  const q = id => sh.querySelector(id);
+  q("#stEdit").onclick = openEdit; q("#stOut").onclick = doSignOut;
+  q("#stNotif").onchange = async e => {
+    if (e.target.checked) { const p = await enableNotifs(); if (p !== "granted") { e.target.checked = false; return; } LS.set("notifs", true); }
+    else { LS.set("notifs", false); unregisterPush(); }
+  };
+  q("#stSound").onchange = e => { LS.set("sound", e.target.checked); if (e.target.checked) beep(); };
+  q("#stPrev").onchange = e => LS.set("preview", e.target.checked);
+  q("#stTest").onclick = async () => { if (Notification.permission !== "granted") { await enableNotifs(); } showNotif("ES Chat Pro", "ده إشعار تجريبي", "test"); beep(); };
+  q("#stHide").onchange = async e => {
+    const on = e.target.checked;
+    try { await updateDoc(doc(db, "users", S.user.uid), on ? { hideLastSeen: true, lastSeen: deleteField() } : { hideLastSeen: false }); if (!on) setTimeout(beat, 300); toast(on ? "حالتك مخفية" : "حالتك ظاهرة"); }
+    catch { e.target.checked = !on; toast("تعذّر الحفظ"); }
+  };
+}
+
+/* إعدادات الموقع (بتتحكم فيها من لوحة المالك) */
+function siteChanged() {
+  if (S.me && (S.view === "app" || S.view === "notice")) route();
+  if (S.view === "app") { paintAnn(); applyComposerState(); renderList(); }
+}
+function paintAnn() {
+  const bar = $("#annBar"), t = (S.site.announcement || "").trim();
+  if (!t || LS.get("annHide", "") === t || S.view !== "app") { bar.classList.add("hidden"); return; }
+  bar.innerHTML = `<span>${esc(t)}</span><button aria-label="إخفاء">✕</button>`; bar.classList.remove("hidden");
+  bar.querySelector("button").onclick = () => { LS.set("annHide", t); paintAnn(); };
+}
+function applyComposerState() {
+  const locked = !!(S.chat && !S.chat.peer && S.site.publicOpen === false && !isOwner());
+  $("#input").disabled = locked; $("#input").placeholder = locked ? "الغرفة العامة مقفولة حاليًا" : "اكتب رسالة...";
+  $("#form .send").disabled = locked;
+}
+
 /* ---------------- app shell ---------------- */
 function paintMe() {
   const me = S.me;
   $("#meBtn").innerHTML = me.photo ? `<img src="${esc(me.photo)}" alt="">` : esc((me.name || "?").charAt(0).toUpperCase());
-  $("#whoami").textContent = "@" + (me.username || "");
+  $("#whoami").innerHTML = "<bdi>@" + esc(me.username || "") + "</bdi>";
   $("#ownerBtn").classList.toggle("hidden", !isOwner());
 }
 async function getUser(uid, force = false) {
@@ -255,20 +419,30 @@ async function ensureUsers(uids) {
 }
 const peerOf = c => c.members.find(m => m !== S.user.uid);
 const ONLINE_MS = 100000;
-const isOnline = u => { const t = toDate(u && u.lastSeen); return !!t && Date.now() - t.getTime() < ONLINE_MS; };
+const isOnline = u => { if (u && u.hideLastSeen) return false; const t = toDate(u && u.lastSeen); return !!t && Date.now() - t.getTime() < ONLINE_MS; };
 
 /* حضور المستخدم: بنسجّل آخر ظهور كل دقيقة طول ما الصفحة مفتوحة */
-function beat() { if (S.user && S.view === "app") updateDoc(doc(db, "users", S.user.uid), { lastSeen: serverTimestamp() }).catch(() => {}); }
-document.addEventListener("visibilitychange", beat);
+function beat() { if (S.user && S.view === "app" && !(S.me && S.me.hideLastSeen)) updateDoc(doc(db, "users", S.user.uid), { lastSeen: serverTimestamp() }).catch(() => {}); }
+document.addEventListener("visibilitychange", () => { beat(); if (document.visibilityState === "visible" && S.view === "app" && S.chat) markRead(S.chat.id); });
 addEventListener("pagehide", beat);
 
 function enterApp() {
   show("app"); paintMe();
+  ["users", "chats"].forEach(k => { if (S.unsub[k]) S.unsub[k](); }); clearInterval(S.beatT); clearInterval(S.tickT);
   $("#ownerBtn").innerHTML = CROWN; $("#ownerBtn").classList.add("owner");
   if (isOwner()) S.unsub.users = onSnapshot(query(collection(db, "users"), limit(500)), snap => { snap.docs.forEach(d => S.users.set(d.id, d.data())); }, e => console.error(e));
-  S.chats = [];
+  S.chats = []; S.chatsLoaded = false; S.seen = new Map();
   S.unsub.chats = onSnapshot(query(collection(db, "chats"), where("members", "array-contains", S.user.uid)), async snap => {
     S.chats = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.lastAt);
+    const first = !S.chatsLoaded; S.chatsLoaded = true;
+    snap.docChanges().forEach(ch => {
+      if (ch.type === "removed") return;
+      const d = ch.doc.data(), ms = toDate(d.lastAt)?.getTime();
+      if (!d.lastAt || !ms || d.lastUid === S.user.uid) return;
+      const prev = S.seen.get(ch.doc.id); S.seen.set(ch.doc.id, ms);
+      if (first) { if (ms > LS.get("read_" + ch.doc.id, 0) && !unreadMap()[ch.doc.id]) setUnread(ch.doc.id, 1); return; }
+      if (prev !== ms) onIncoming(ch.doc.id, d);
+    });
     await ensureUsers(S.chats.map(peerOf)); renderList();
   }, e => console.error(e));
   beat(); S.beatT = setInterval(() => { if (document.visibilityState === "visible") beat(); }, 60000);
@@ -278,7 +452,10 @@ function enterApp() {
     if (S.chat && S.chat.peer) paintHead();
     if (++n % 3 === 0) { await Promise.all(S.chats.map(c => getUser(peerOf(c), true))); renderList(); }
   }, 20000);
-  renderList(); showEmpty();
+  renderList(); showEmpty(); paintAnn(); paintNotifBar(); updateBadge(); registerPush();
+  const q = new URLSearchParams(location.search).get("chat");
+  if (q) { history.replaceState(null, "", location.pathname); S.pendingChat = q; }
+  if (S.pendingChat) { const id = S.pendingChat; S.pendingChat = null; openFromId(id); }
 }
 function showEmpty() {
   S.chat = null; if (S.unsub.msgs) S.unsub.msgs(); if (S.unsub.peerDoc) S.unsub.peerDoc(); if (S.unsub.chatDoc) S.unsub.chatDoc();
@@ -286,7 +463,7 @@ function showEmpty() {
   $("#messages").innerHTML = `<div class="empty"><div class="big">ES Chat Pro</div><p>ابحث عن صاحبك بالـ @يوزر عشان تبدأ محادثة.</p></div>`;
   $("#app").classList.remove("open");
 }
-$("#meBtn").onclick = () => { const sh = openModal(`<div id="editBox"></div>`); renderForm(sh.querySelector("#editBox"), "edit"); };
+$("#meBtn").onclick = () => openSettings();
 $("#ownerBtn").onclick = () => openOwner();
 $("#back").onclick = () => { $("#app").classList.remove("open"); };
 $("#chatHead").onclick = () => { if (S.chat && S.chat.peer) openProfile(S.chat.peer); };
@@ -308,16 +485,23 @@ async function doSearch() {
   renderList();
 }
 
+function listTime(t) {
+  const d = toDate(t); if (!d) return "";
+  if (sameDay(d, new Date())) return fmtTime(d);
+  if (sameDay(d, new Date(Date.now() - 864e5))) return "أمس";
+  return d.toLocaleDateString("ar-EG", { day: "numeric", month: "short" });
+}
 function renderList() {
   if (S.view !== "app") return;
   const term = $("#search").value.trim().toLowerCase().replace(/^@/, "");
+  const um = unreadMap();
   let h = `<div class="section">الغرفة العامة</div>
-    <div class="chat-item ${S.chat && S.chat.id === "public" ? "active" : ""}" data-open="public"><div class="avatar public">ES</div>
-      <div class="chat-meta"><div class="name">الغرفة العامة</div><div class="preview">محادثة مفتوحة لكل الأعضاء</div></div></div>`;
+    <div class="chat-item ${S.chat && !S.chat.peer ? "active" : ""}" data-open="public"><div class="avatar public">ES</div>
+      <div class="chat-meta"><div class="row1"><div class="name">الغرفة العامة</div></div><div class="row2"><div class="preview">${S.site.publicOpen === false ? "مقفولة للكتابة حاليًا" : "محادثة مفتوحة لكل الأعضاء"}</div></div></div></div>`;
   if (term) {
     h += `<div class="section">نتيجة البحث</div>`;
     const f = S.found;
-    if (f && f.uid) h += `<div class="chat-item" data-open="${esc(f.uid)}">${avatar(f.u)}<div class="chat-meta"><div class="name">${esc(f.u.name)}${badge(f.u, 15)}</div><div class="preview">@${esc(f.u.username)}</div></div></div>`;
+    if (f && f.uid) h += `<div class="chat-item" data-open="${esc(f.uid)}">${avatar(f.u)}<div class="chat-meta"><div class="row1"><div class="name">${esc(f.u.name)}${badge(f.u, 15)}</div></div><div class="row2"><div class="preview"><bdi>@${esc(f.u.username)}</bdi></div></div></div></div>`;
     else if (f && f.self) h += `<div class="empty-list">ده اليوزر بتاعك 🙂</div>`;
     else if (f && f.none) h += `<div class="empty-list">مفيش حد بالـ username ده. اتأكد إنه مكتوب صح.</div>`;
     else h += `<div class="empty-list">اكتب اليوزر كامل (3 حروف على الأقل)...</div>`;
@@ -325,9 +509,10 @@ function renderList() {
   h += `<div class="section">محادثاتك</div>`;
   const chats = [...S.chats].sort((a, b) => (toDate(b.lastAt)?.getTime() || 0) - (toDate(a.lastAt)?.getTime() || 0));
   h += chats.length ? chats.map(c => {
-    const pid = peerOf(c), u = S.users.get(pid) || { name: "مستخدم" };
-    return `<div class="chat-item ${S.chat && S.chat.peer === pid ? "active" : ""}" data-open="${esc(pid)}"><div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div>
-      <div class="chat-meta"><div class="name">${esc(u.name)}${badge(u, 15)}</div><div class="preview">${c.lastUid === S.user.uid ? "أنت: " : ""}${esc(c.lastText || "")}</div></div></div>`;
+    const pid = peerOf(c), u = S.users.get(pid) || { name: "مستخدم" }, n = um[c.id] || 0;
+    return `<div class="chat-item ${S.chat && S.chat.peer === pid ? "active" : ""} ${n ? "has-unread" : ""}" data-open="${esc(pid)}"><div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div>
+      <div class="chat-meta"><div class="row1"><div class="name">${esc(u.name)}${badge(u, 15)}</div><span class="when">${esc(listTime(c.lastAt))}</span></div>
+      <div class="row2"><div class="preview">${c.lastUid === S.user.uid ? "أنت: " : ""}${esc(c.lastText || "")}</div>${n ? `<b class="unread">${n > 99 ? "99+" : n}</b>` : ""}</div></div></div>`;
   }).join("") : `<div class="empty-list">مفيش محادثات لسه.<br>اطلب من صاحبك الـ @username بتاعه وابحث بيه فوق.</div>`;
   $("#list").innerHTML = h;
 }
@@ -337,6 +522,7 @@ $("#list").addEventListener("click", e => {
 });
 
 function statusOf(u, c) {
+  if (u && u.hideLastSeen) return { t: "", cls: "" };
   if (c && c.peer) {
     const ty = S.chat && S.chat.typingAt && Date.now() - S.chat.typingAt < 5000;
     if (ty) return { t: "يكتب...", cls: "typing" };
@@ -350,7 +536,7 @@ function paintHead() {
   const c = S.chat; if (!c) return;
   if (!c.peer) { $("#chatHead").innerHTML = `<div class="avatar public">ES</div><div class="t"><b>الغرفة العامة</b><small>محادثة مفتوحة لكل الأعضاء</small></div>`; return; }
   const u = S.users.get(c.peer) || {}, st = statusOf(u, c);
-  $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b>${esc(u.name || "مستخدم")}${badge(u, 16)}</b><small class="st ${st.cls}">${esc(st.t || "@" + (u.username || ""))}</small></div>`;
+  $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b>${esc(u.name || "مستخدم")}${badge(u, 16)}</b><small class="st ${st.cls}">${st.t ? esc(st.t) : "<bdi>@" + esc(u.username || "") + "</bdi>"}</small></div>`;
 }
 
 function openChat(peer) {
@@ -359,7 +545,7 @@ function openChat(peer) {
   const id = peer ? [S.user.uid, peer].sort().join("_") : "public";
   S.chat = { id, peer: peer || null, first: true, lastTyping: undefined, typingAt: 0, sentTyping: 0 };
   $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open");
-  $("#messages").innerHTML = ""; paintHead(); renderList();
+  $("#messages").innerHTML = ""; markRead(id); applyComposerState(); paintHead(); renderList();
   S.unsub.msgs = onSnapshot(query(collection(db, "chats", id, "messages"), orderBy("at"), limitToLast(150)),
     snap => { S.chat && S.chat.id === id && renderMsgs(snap.docs); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
   if (peer) {
@@ -384,13 +570,14 @@ function renderMsgs(docs) {
     S.chat.first = false; return;
   }
   if (pub) ensureUsers(docs.map(d => d.data().uid)).then(ch => { if (ch && S.chat && !S.chat.peer) renderMsgs(S.chat.lastDocs); });
-  let last = "", h = "";
+  let last = "", h = "", pu = "", pt = 0;
   for (const d of docs) {
     const m = d.data({ serverTimestamps: "estimate" }), dt = toDate(m.at) || new Date(), mine = m.uid === S.user.uid;
-    const lbl = dayLabel(dt); if (lbl !== last) { h += `<div class="date-sep">${esc(lbl)}</div>`; last = lbl; }
+    const lbl = dayLabel(dt); if (lbl !== last) { h += `<div class="date-sep">${esc(lbl)}</div>`; last = lbl; pu = ""; }
     const sender = S.users.get(m.uid) || {};
-    h += `<div class="msg ${mine ? "me" : "them"}">`
-      + (pub && !mine ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : "")
+    const cont = pu === m.uid && dt.getTime() - pt < 300000; pu = m.uid; pt = dt.getTime();
+    h += `<div class="msg ${mine ? "me" : "them"}${cont ? " cont" : ""}">`
+      + (pub && !mine && !cont ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : "")
       + `<div class="txt">${esc(m.text)}</div>`
       + `<div class="tm">${(mine || canDelAll) ? `<button class="del" data-del="${esc(d.id)}">حذف</button>` : ""}<span>${fmtTime(dt)}</span></div></div>`;
   }
@@ -407,7 +594,7 @@ $("#messages").addEventListener("click", async e => {
 const chatRef = () => doc(db, "chats", S.chat.id);
 const membersOf = () => [S.user.uid, S.chat.peer].sort();
 $("#input").addEventListener("input", () => {
-  const c = S.chat; if (!c || !c.peer || !$("#input").value.trim()) return;
+  const c = S.chat; if (!c || !c.peer || !$("#input").value.trim() || (S.me && S.me.hideLastSeen)) return;
   if (Date.now() - c.sentTyping < 2500) return;
   c.sentTyping = Date.now();
   setDoc(chatRef(), { members: membersOf(), typing: { [S.user.uid]: Date.now() } }, { merge: true }).catch(() => {});
@@ -418,6 +605,7 @@ $("#form").onsubmit = async e => {
   $("#input").value = ""; const c = S.chat;
   try {
     await addDoc(collection(db, "chats", c.id, "messages"), { uid: S.user.uid, text, at: serverTimestamp() });
+    if (c.peer) pushNotify(c.id, text);
     if (c.peer) { c.sentTyping = 0; setDoc(chatRef(), { members: membersOf(), lastText: text.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, typing: { [S.user.uid]: 0 } }, { merge: true }).catch(e => console.error(e)); }
   } catch (er) { console.error(er); $("#input").value = text; toast("الرسالة ماتبعتتش"); }
 };
@@ -431,7 +619,7 @@ async function openProfile(uid, opts = {}) {
   const sh = openModal(`<div class="prof">
     ${avatar(u)}
     <h3>${esc(u.name)}${badge(u, 22)}</h3>
-    <div class="un">@${esc(u.username || "—")}</div>
+    <div class="un"><bdi>@${esc(u.username || "—")}</bdi></div>
     <div class="chips">${u.role === "owner" ? `<span class="chip owner">المالك · حساب رسمي</span>` : ""}<span class="chip">${genderText(u.gender)}</span>${u.banned ? `<span class="tag-ban">موقوف</span>` : ""}</div>
     ${u.bio ? `<div class="bio">${esc(u.bio)}</div>` : ""}
     ${own ? `<div class="kv"><div>الإيميل<span>${esc(u.email || "—")}</span></div><div>آخر دخول<span>${esc(fmtDT(u.lastLogin))}</span></div><div>مرات الدخول<span>${u.loginCount || 0}</span></div><div>تاريخ التسجيل<span>${esc(fmtDT(u.createdAt))}</span></div><div>UID<span>${esc(uid)}</span></div></div>` : ""}
@@ -442,7 +630,7 @@ async function openProfile(uid, opts = {}) {
     ${own && !self ? `<div class="actions"><button class="btn-ghost" id="pVer">${u.verified ? "إزالة التوثيق" : "توثيق الحساب"}</button><button class="btn-danger" id="pBan">${u.banned ? "فك الحظر" : "حظر"}</button><button class="btn-danger" id="pDel">حذف الحساب</button></div>` : ""}
   </div>`);
   const on = (id, f) => { const el = sh.querySelector(id); if (el) el.onclick = f; };
-  on("#pEdit", () => $("#meBtn").click());
+  on("#pEdit", () => openEdit());
   on("#pMsg", () => { closeModal(); openChat(uid); });
   on("#pBack", openOwner);
   on("#pVer", async () => { await updateDoc(doc(db, "users", uid), { verified: !u.verified }); toast("تم"); openProfile(uid, opts); });
@@ -458,12 +646,12 @@ async function openProfile(uid, opts = {}) {
 async function openOwner(tab = "overview") {
   if (!isOwner()) return;
   const sh = openModal(`<div class="tabs" id="tabs">
-      <button data-t="overview">نظرة عامة</button><button data-t="users">المستخدمون</button><button data-t="logins">سجل الدخول</button></div>
+      <button data-t="overview">نظرة عامة</button><button data-t="users">المستخدمون</button><button data-t="logins">سجل الدخول</button><button data-t="settings">إعدادات الموقع</button></div>
     <div id="pbody"><div class="empty-list">جاري التحميل...</div></div>`, true);
   const body = sh.querySelector("#pbody");
   sh.querySelectorAll("[data-t]").forEach(b => { b.classList.toggle("on", b.dataset.t === tab); b.onclick = () => openOwner(b.dataset.t); });
   const users = [...S.users.entries()];
-  const row = (id, u, end) => `<div class="row-item" data-p="${esc(id)}">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}${badge(u, 15)}${u.banned ? ` <span class="tag-ban">موقوف</span>` : ""}</div><small>@${esc(u.username || "—")} · ${esc(u.email || "")}</small></div><div class="end">${end}</div></div>`;
+  const row = (id, u, end) => `<div class="row-item" data-p="${esc(id)}">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}${badge(u, 15)}${u.banned ? ` <span class="tag-ban">موقوف</span>` : ""}</div><small><bdi>@${esc(u.username || "—")}</bdi> · ${esc(u.email || "")}</small></div><div class="end">${end}</div></div>`;
   const wire = () => body.querySelectorAll("[data-p]").forEach(r => r.onclick = () => openProfile(r.dataset.p, { fromPanel: true }));
 
   if (tab === "overview") {
@@ -478,6 +666,7 @@ async function openOwner(tab = "overview") {
     body.innerHTML = `<div class="stats">
       <div class="stat"><b>${users.length}</b><span>إجمالي المسجلين</span></div>
       <div class="stat"><b>${users.filter(([, u]) => u.onboarded).length}</b><span>أكملوا البروفايل</span></div>
+      <div class="stat"><b>${users.filter(([, u]) => isOnline(u)).length}</b><span>متصلين الآن</span></div>
       <div class="stat"><b>${today}</b><span>دخلوا النهارده</span></div>
       <div class="stat"><b>${newToday}</b><span>تسجيلات جديدة النهارده</span></div>
       <div class="stat"><b>${stats.global || 0}</b><span>إجمالي الزيارات</span></div>
@@ -497,6 +686,32 @@ async function openOwner(tab = "overview") {
       wire();
     };
     body.querySelector("#pq").oninput = paint; paint();
+  } else if (tab === "settings") {
+    const st = S.site || {};
+    body.innerHTML = `${switchRow("sMaint", !!st.maintenance, "وضع الصيانة", "بيقفل الموقع على كل الأعضاء ماعدا حسابك")}
+      ${switchRow("sReg", st.registrationOpen !== false, "فتح التسجيل", "لو اتقفل محدش جديد يقدر يعمل حساب")}
+      ${switchRow("sPub", st.publicOpen !== false, "الغرفة العامة مفتوحة للكتابة", "لو اتقفلت إنت بس اللي بتكتب فيها")}
+      <div class="field" style="margin-top:14px"><label for="sMsg">رسالة الصيانة</label><input type="text" id="sMsg" maxlength="120" value="${esc(st.maintenanceMsg || "")}" placeholder="هنرجع قريب"></div>
+      <div class="field"><label for="sAnn">إعلان لكل الأعضاء (بيظهر فوق القايمة)</label><textarea id="sAnn" maxlength="200" placeholder="اكتب الإعلان هنا">${esc(st.announcement || "")}</textarea></div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn-primary" id="sSave">حفظ الإعدادات</button><button class="btn-ghost" id="sClear">مسح الإعلان</button></div>
+      <div class="panel-h">البيانات</div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="sCsv">تصدير المستخدمين (CSV)</button></div>`;
+    const save = async extra => {
+      try {
+        await setDoc(doc(db, "settings", "site"), { maintenance: body.querySelector("#sMaint").checked, registrationOpen: body.querySelector("#sReg").checked, publicOpen: body.querySelector("#sPub").checked,
+          maintenanceMsg: body.querySelector("#sMsg").value.trim(), announcement: body.querySelector("#sAnn").value.trim(), updatedAt: serverTimestamp(), ...(extra || {}) }, { merge: true });
+        toast("اتحفظت الإعدادات");
+      } catch (e) { console.error(e); toast("تعذّر الحفظ"); }
+    };
+    body.querySelector("#sSave").onclick = () => save();
+    body.querySelector("#sClear").onclick = () => { body.querySelector("#sAnn").value = ""; save({ announcement: "" }); };
+    body.querySelector("#sCsv").onclick = () => {
+      const cell = v => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+      const rows = [["الاسم", "اليوزر", "الإيميل", "النوع", "تاريخ التسجيل", "آخر دخول", "مرات الدخول", "موثّق", "موقوف"]].concat(users.map(([, u]) =>
+        [u.name, u.username, u.email, genderText(u.gender), fmtDT(u.createdAt), fmtDT(u.lastLogin), u.loginCount || 0, u.verified ? "نعم" : "", u.banned ? "نعم" : ""]));
+      const blob = new Blob(["\ufeff" + rows.map(r => r.map(cell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "es-chat-users.csv"; document.body.append(a); a.click(); a.remove();
+    };
   } else {
     let rows = [];
     try { rows = (await getDocs(query(collection(db, "logins"), orderBy("at", "desc"), limit(80)))).docs.map(d => d.data()); } catch { toast("تعذّر قراءة سجل الدخول"); }
