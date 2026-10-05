@@ -61,6 +61,7 @@
     <div id="annBar" class="ann hidden"></div>
     <div id="notifBar" class="notif-bar hidden"></div>
     <label class="searchbox"><svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="search" placeholder="ابحث باليوزر، مثال: @ahmed"></label>
+    <div class="chips-row" id="chipsRow"></div>
     <div class="list" id="list"></div>
   </aside>
 
@@ -68,10 +69,14 @@
     <header class="chatbar" id="chatbar">
       <button class="back" id="back" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div id="chatHead" class="chat-head"></div>
+      <button class="icon-btn hidden" id="chatMenuBtn" aria-label="خيارات المحادثة"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="19" r="1.8" fill="currentColor"/></svg></button>
     </header>
     <section class="messages" id="messages"></section>
     <div class="composer-wrap hidden" id="composerWrap">
+      <div id="replyBar" class="reply-bar hidden"></div>
+      <div id="quickPop" class="quick-pop hidden"></div>
       <form class="composer" id="form">
+        <button type="button" class="attach" id="attachBtn" aria-label="إرفاق"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6L15 7.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <input id="input" placeholder="اكتب رسالة..." autocomplete="off" maxlength="2000">
         <button class="send" aria-label="إرسال"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 11.5 21 3l-8.5 18-2-7.5L3 11.5z" fill="currentColor"/></svg></button>
       </form>
@@ -80,6 +85,8 @@
 </div>
 
 <div id="modal" class="modal hidden"><div class="sheet" id="sheet"></div></div>
+<input type="file" id="fileImg" accept="image/*" hidden>
+<input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
 <div id="toast" class="toast"></div>
 
 <script type="module" src="app.js"></script>
