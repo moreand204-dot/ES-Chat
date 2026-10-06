@@ -266,3 +266,17 @@ button{cursor:pointer}
 .pc span{display:block;font-size:14px}.pc small{display:block;color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.7}
 .pc.bad span{color:#ffb3c1}
 .sheet.wide .row-item .end{display:flex;gap:6px;align-items:center}
+
+/* ---------- v6: تابات سفلية + منع النسخ + شريط الاتصال ---------- */
+*{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+input,textarea{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+img{-webkit-user-drag:none;user-drag:none}
+.msg{touch-action:pan-y}
+.tabbar{flex:0 0 auto;display:flex;gap:4px;margin:6px 12px calc(10px + env(safe-area-inset-bottom));padding:6px;background:var(--ink);border:1px solid var(--line);border-radius:22px;box-shadow:0 0 24px color-mix(in srgb,var(--glow) 18%,transparent)}
+.tabbar button{position:relative;flex:1;min-width:0;border:0;background:none;border-radius:17px;height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:11.5px;font-weight:500;transition:.18s}
+.tabbar button svg{display:block}
+.tabbar button.on{background:#0e2270;color:var(--text);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--blue) 55%,transparent),0 0 16px color-mix(in srgb,var(--glow) 30%,transparent)}
+.tabbar button.on svg{color:var(--ice)}
+.tb-dot{position:absolute;top:8px;inset-inline-end:calc(50% - 20px);width:9px;height:9px;border-radius:50%;background:var(--danger);box-shadow:0 0 8px var(--danger)}
+.ch-actions{display:flex;gap:8px;padding:6px 8px 4px}
+.net-bar{position:fixed;top:0;inset-inline:0;z-index:80;background:#7a1a2c;color:#fff;text-align:center;font-size:13px;padding:max(7px,env(safe-area-inset-top)) 12px 7px}

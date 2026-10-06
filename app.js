@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, limitToLast,
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, enableNetwork, disableNetwork, waitForPendingWrites, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, limitToLast,
   onSnapshot, addDoc, where, serverTimestamp, increment, writeBatch, getDocs, deleteField, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import * as CFG from "./firebase-config.js";
@@ -13,7 +13,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const S = { user: null, me: null, users: new Map(), chats: [], chat: null, found: null, site: {}, groups: [], gseen: new Map(), seen: new Map(), unsub: {}, view: "boot", filter: "all", prefs: { pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] } };
 const DEFAULT_PREFS = () => ({ pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] });
-try { const u = new URLSearchParams(location.search).get("u"); if (u) sessionStorage.es_u = u; const gp = new URLSearchParams(location.search).get("g"); if (gp) sessionStorage.es_g = gp; } catch {}
+try { const u = new URLSearchParams(location.search).get("u"); if (u) sessionStorage.es_u = u; const gp = new URLSearchParams(location.search).get("g"); if (gp) sessionStorage.es_g = gp; const cp = new URLSearchParams(location.search).get("c"); if (cp) sessionStorage.es_c = cp; } catch {}
 const LS = {
   get: (k, d) => { try { const v = localStorage.getItem("es_" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem("es_" + k, JSON.stringify(v)); } catch {} },
@@ -48,17 +48,45 @@ function show(view) {
   S.view = view;
   for (const id of ["boot", "login", "onboard", "banned", "notice", "app"]) $("#" + id).classList.toggle("hidden", id !== view);
 }
-function closeModal() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide"); }
+/* ---- طبقات التنقل: زر الرجوع في النظام بيقفل آخر طبقة (نافذة / محادثة / تبويب) بدل ما يخرّجك من الموقع ---- */
+const LAYERS = []; let ignorePop = 0; const deferred = [];
+function layerOpen(id, close) {
+  const e = LAYERS.find(l => l.id === id); if (e) { e.close = close; return; }
+  if (ignorePop > 0) { deferred.push(() => layerOpen(id, close)); return; }
+  LAYERS.push({ id, close }); try { history.pushState({ es: LAYERS.length }, ""); } catch {}
+}
+function layerClose(id) {
+  const i = LAYERS.findIndex(l => l.id === id); if (i < 0) return;
+  const n = LAYERS.length - i; LAYERS.splice(i); ignorePop++; history.go(-n);
+  setTimeout(() => { if (ignorePop > 0) { ignorePop = 0; deferred.splice(0).forEach(f => f()); } }, 900);
+}
+addEventListener("popstate", () => {
+  if (ignorePop > 0) { ignorePop--; if (!ignorePop) deferred.splice(0).forEach(f => f()); return; }
+  const l = LAYERS.pop(); if (l) l.close();
+});
+function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide"); }
+function closeModal() {
+  const was = !$("#modal").classList.contains("hidden"); modalDom();
+  if (was) setTimeout(() => { if ($("#modal").classList.contains("hidden")) layerClose("modal"); }, 0);
+}
 function openModal(html, wide = false) {
   const sh = $("#sheet");
   sh.classList.toggle("wide", wide);
   sh.innerHTML = `<button class="x" id="xBtn" aria-label="إغلاق">✕</button>` + html;
-  $("#modal").classList.remove("hidden");
+  $("#modal").classList.remove("hidden"); layerOpen("modal", modalDom);
   $("#xBtn").onclick = closeModal;
   return sh;
 }
 $("#modal").addEventListener("mousedown", e => { if (e.target.id === "modal") closeModal(); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+
+/* ---- منع النسخ والتحديد في الموقع (إلا جوه خانات الكتابة) ---- */
+const inField = t => !!(t && t.closest && t.closest("input,textarea"));
+document.addEventListener("copy", e => { if (!inField(e.target)) e.preventDefault(); });
+document.addEventListener("cut", e => { if (!inField(e.target)) e.preventDefault(); });
+document.addEventListener("selectstart", e => { if (!inField(e.target)) e.preventDefault(); });
+document.addEventListener("dragstart", e => e.preventDefault());
+document.addEventListener("contextmenu", e => { if (!inField(e.target)) e.preventDefault(); });
 
 /* ---------------- firebase ---------------- */
 const withTimeout = (p, ms = 15000) => Promise.race([p, new Promise((_, r) => setTimeout(() => r(Object.assign(new Error("timeout"), { code: "timeout" })), ms))]);
@@ -83,7 +111,8 @@ if (!configured) {
   $("#loginMsg").textContent = "لازم تلصق إعدادات Firebase في ملف firebase-config.js الأول.";
 } else {
   fbApp = initializeApp(firebaseConfig); const fb = fbApp;
-  auth = getAuth(fb); db = initializeFirestore(fb, { experimentalAutoDetectLongPolling: true });
+  auth = getAuth(fb); try { db = initializeFirestore(fb, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }), experimentalAutoDetectLongPolling: true }); }
+  catch (e) { console.warn("cache", e); db = initializeFirestore(fb, { experimentalAutoDetectLongPolling: true }); }
   countVisit();
   getRedirectResult(auth).catch(loginError);
   onAuthStateChanged(auth, onAuth);
@@ -358,13 +387,48 @@ async function unregisterPush() {
     await M.deleteToken(M.getMessaging(fbApp)); S.fcm = null;
   } catch {}
 }
-async function pushNotify(chatId, text) {
-  if (!VAPID_KEY || !S.user) return;
+/* طابور الإشعارات: لو إنت أوفلاين وقت الإرسال، الإشعار بيتبعت لما النت يرجع (حتى لو قفلت الموقع وفتحته تاني) */
+const OBK = "es_pushq";
+const obGet = () => { try { return JSON.parse(localStorage.getItem(OBK) || "[]"); } catch { return []; } };
+const obSet = a => { try { localStorage.setItem(OBK, JSON.stringify(a.slice(-30))); } catch {} };
+let obBusy = false;
+async function flushPushOutbox() {
+  if (obBusy || !S.user || !VAPID_KEY || !navigator.onLine || !obGet().length) return;
+  obBusy = true;
   try {
-    const t = await S.user.getIdToken();
-    fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ chatId, text: text.slice(0, 120) }) }).catch(() => {});
-  } catch {}
+    await withTimeout(waitForPendingWrites(db), 20000);
+    for (const it of obGet()) {
+      if (it.uid !== S.user.uid) continue;
+      if (Date.now() - it.at > 6 * 3600e3) { obSet(obGet().filter(x => x.id !== it.id)); continue; }
+      try {
+        const t = await S.user.getIdToken();
+        const r = await fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ chatId: it.chatId, text: it.text }) });
+        if (r.status >= 500) throw new Error("srv");
+        obSet(obGet().filter(x => x.id !== it.id));
+      } catch { break; }
+    }
+  } catch {} finally { obBusy = false; }
 }
+function pushNotify(chatId, text) {
+  if (!VAPID_KEY || !S.user) return;
+  obSet([...obGet(), { id: Date.now() + "_" + Math.random().toString(36).slice(2, 7), chatId, text: String(text).slice(0, 120), at: Date.now(), uid: S.user.uid }]);
+  flushPushOutbox();
+}
+/* رجوع النت / رجوع للتطبيق: بنجدد اتصال Firestore عشان الرسايل الفايتة توصل فورًا */
+let resyncing = false, hiddenAt = 0;
+function setNet(on) { $("#netBar").classList.toggle("hidden", on); }
+async function resync() {
+  if (!db || !S.user || resyncing || !navigator.onLine) return; resyncing = true;
+  try { await disableNetwork(db); await enableNetwork(db); } catch {}
+  resyncing = false; flushPushOutbox(); registerPush();
+}
+addEventListener("online", () => { setNet(true); setTimeout(resync, 300); });
+addEventListener("offline", () => setNet(false));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") hiddenAt = Date.now();
+  else if (hiddenAt && Date.now() - hiddenAt > 15000) { hiddenAt = 0; resync(); } else flushPushOutbox();
+});
+setNet(navigator.onLine);
 
 const switchRow = (id, on, label, sub) => `<label class="tg-row"><div><b>${label}</b>${sub ? `<small>${sub}</small>` : ""}</div><input type="checkbox" class="tg" id="${id}" ${on ? "checked" : ""}><span class="tg-ui"></span></label>`;
 function openEdit() { const sh = openModal(`<div id="editBox"></div>`); renderForm(sh.querySelector("#editBox"), "edit"); }
@@ -491,6 +555,7 @@ function enterApp() {
   S.unsub.prefs = onSnapshot(doc(db, "users", S.user.uid, "data", "prefs"), s => { S.prefs = { ...DEFAULT_PREFS(), ...(s.data() || {}) }; renderList(); if (S.chat) { applyComposerState(); paintHead(); } }, () => {});
   S.unsub.chats = onSnapshot(query(collection(db, "chats"), where("members", "array-contains", S.user.uid)), async snap => {
     S.chats = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.lastAt);
+    if (snap.metadata.fromCache && !S.chatsLoaded) { await ensureUsers(S.chats.map(peerOf)); renderList(); return; }
     const first = !S.chatsLoaded; S.chatsLoaded = true;
     snap.docChanges().forEach(ch => {
       if (ch.type === "removed") return;
@@ -505,6 +570,7 @@ function enterApp() {
   S.groups = []; S.gseen = new Map(); S.groupsLoaded = false;
   S.unsub.groups = onSnapshot(query(collection(db, "groups"), where("members", "array-contains", S.user.uid)), snap => {
     S.groups = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (snap.metadata.fromCache && !S.groupsLoaded) { renderList(); return; }
     const first = !S.groupsLoaded; S.groupsLoaded = true;
     snap.docChanges().forEach(ch => {
       if (ch.type === "removed") return;
@@ -516,7 +582,7 @@ function enterApp() {
     });
     renderList();
   }, e => console.error(e));
-  beat(); S.beatT = setInterval(() => { if (document.visibilityState === "visible") beat(); }, 60000);
+  flushPushOutbox(); beat(); S.beatT = setInterval(() => { if (document.visibilityState === "visible") beat(); }, 60000);
   let n = 0;
   S.tickT = setInterval(async () => {
     if (S.view !== "app") return;
@@ -529,17 +595,19 @@ function enterApp() {
   if (q) { history.replaceState(null, "", location.pathname); S.pendingChat = q; }
   if (S.pendingChat) { const id = S.pendingChat; S.pendingChat = null; openFromId(id); }
   const un = sessionStorage.es_u; if (un) { sessionStorage.removeItem("es_u"); history.replaceState(null, "", location.pathname); openByUsername(un); }
+  const cq = sessionStorage.es_c; if (cq) { sessionStorage.removeItem("es_c"); history.replaceState(null, "", location.pathname); openByHandle(cq); }
   const gq = sessionStorage.es_g; if (gq) { sessionStorage.removeItem("es_g"); history.replaceState(null, "", location.pathname); openGroup(gq); }
 }
 function showEmpty() {
   S.chat = null; closeChatSubs();
   $("#chatHead").innerHTML = ""; $("#composerWrap").classList.add("hidden");
   $("#messages").innerHTML = `<div class="empty"><div class="big">ES Chat Pro</div><p>ابحث عن صاحبك بالـ @يوزر عشان تبدأ محادثة.</p></div>`;
-  $("#app").classList.remove("open");
+  $("#app").classList.remove("open"); layerClose("chat");
 }
+function chatUiClose() { $("#app").classList.remove("open"); }
 $("#meBtn").onclick = () => openSettings();
 $("#ownerBtn").onclick = () => openOwner();
-$("#back").onclick = () => { $("#app").classList.remove("open"); };
+$("#back").onclick = () => { chatUiClose(); layerClose("chat"); };
 $("#chatHead").onclick = () => { if (!S.chat) return; if (S.chat.peer) openProfile(S.chat.peer); else if (S.chat.group) openGroupInfo(S.chat.id); };
 $("#whoami").onclick = () => { const t = "@" + (S.me.username || ""); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast("اتنسخ اليوزر " + t), () => toast(t)); };
 
@@ -601,9 +669,48 @@ function groupRow(g, um, P, PIN, MUTE) {
     <div class="chat-meta"><div class="row1"><div class="name">${g.kind === "channel" ? CHAN_IC : ""}${esc(g.name)}${dots}</div><span class="when">${esc(listTime(g.lastAt || g.createdAt))}</span></div>
     <div class="row2"><div class="preview">${esc(last)}</div>${P.pins.includes(g.id) ? PIN : ""}${muted ? MUTE : ""}${n ? `<b class="unread ${muted ? "muted" : ""}">${n > 99 ? "99+" : n}</b>` : ""}</div></div></div>`;
 }
+const PIN = `<svg class="mini-ic" width="13" height="13" viewBox="0 0 24 24"><path d="M14 3l7 7-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4 1-3z" fill="currentColor"/></svg>`;
+const MUTE = `<svg class="mini-ic" width="13" height="13" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5zm5.5 3.5 5 7m0-7-5 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+S.tab = "chats";
+const TABS_SEARCH = { chats: "ابحث باليوزر @ أو بالقناة #", channels: "ابحث عن قناة بالاسم أو #اسم_القناة" };
+function paintTabs() {
+  document.querySelectorAll("#tabbar [data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === S.tab));
+  $("#search").placeholder = TABS_SEARCH[S.tab] || TABS_SEARCH.chats;
+  $("#chipsRow").classList.toggle("hidden", S.tab !== "chats");
+  const um = unreadMap();
+  $("#dotCh").classList.toggle("hidden", !S.groups.some(g => g.kind === "channel" && um[g.id]));
+  $("#dotCh2").classList.toggle("hidden", !(S.chats.some(c => um[c.id]) || S.groups.some(g => g.kind === "group" && um[g.id])));
+}
+function setTab(t) {
+  if (S.tab === t) return;
+  const back = () => { S.tab = "chats"; $("#search").value = ""; S.found = null; renderList(); };
+  S.tab = t; $("#search").value = ""; S.found = null;
+  if (t === "chats") layerClose("tab"); else layerOpen("tab", back);
+  renderList();
+}
+$("#tabbar").addEventListener("click", e => {
+  const b = e.target.closest("[data-tab]"); if (!b) return; const t = b.dataset.tab;
+  if (t === "settings") return openSettings();
+  if (t === "profile") return openProfile(S.user.uid);
+  setTab(t);
+});
+function renderChannelsTab() {
+  const um = unreadMap(), P = S.prefs, raw = $("#search").value.trim().toLowerCase();
+  let h = `<div class="ch-actions"><button class="btn-mini" data-ch="new">+ قناة جديدة</button><button class="btn-mini ghost" data-ch="find">استكشاف القنوات</button></div>`;
+  let chans = S.groups.filter(g => g.kind === "channel" && !P.arch.includes(g.id));
+  if (raw.startsWith("#")) {
+    h += `<div class="section">نتيجة البحث</div>`; const r = S.found;
+    h += r && r.g ? groupRow(r.g, um, P, PIN, MUTE) : r && r.none ? `<div class="empty-list">مفيش قناة بالاسم ده.</div>` : `<div class="empty-list">اكتب اسم القناة كامل (3 حروف على الأقل)...</div>`;
+    chans = [];
+  } else if (raw) chans = chans.filter(g => (g.name || "").toLowerCase().includes(raw) || (g.handle || "").includes(raw));
+  chans.sort((a, b) => { const pa = P.pins.indexOf(a.id), pb = P.pins.indexOf(b.id); if ((pa >= 0) !== (pb >= 0)) return pa >= 0 ? -1 : 1; return (toDate(b.lastAt || b.createdAt)?.getTime() || 0) - (toDate(a.lastAt || a.createdAt)?.getTime() || 0); });
+  if (!raw.startsWith("#")) h += `<div class="section">قنواتك</div>` + (chans.length ? chans.map(g => groupRow(g, um, P, PIN, MUTE)).join("") : `<div class="empty-list">${raw ? "مفيش قناة بالاسم ده في قنواتك." : "مش متابع أي قناة لسه.<br>استكشف القنوات العامة أو ابحث بـ #اسم_القناة."}</div>`);
+  $("#list").innerHTML = h; paintTabs();
+}
 function renderList() {
   if (S.view !== "app") return;
-  renderChips();
+  if (S.tab === "channels") return renderChannelsTab();
+  renderChips(); paintTabs();
   const term = $("#search").value.trim().toLowerCase().replace(/^@/, "");
   const um = unreadMap(), P = S.prefs, f = S.filter;
   let h = "";
@@ -619,7 +726,7 @@ function renderList() {
     else if (r && r.none) h += `<div class="empty-list">مفيش نتايج. اتأكد إن الاسم مكتوب صح.</div>`;
     else h += `<div class="empty-list">اكتب اليوزر كامل (3 حروف على الأقل)...</div>`;
   }
-  let chats = [...S.chats.filter(c => !P.block.includes(peerOf(c))).map(c => ({ ...c, _t: "dm" })), ...S.groups.map(g => ({ ...g, _t: g.kind }))];
+  let chats = [...S.chats.filter(c => !P.block.includes(peerOf(c))).map(c => ({ ...c, _t: "dm" })), ...S.groups.filter(g => g.kind !== "channel").map(g => ({ ...g, _t: g.kind }))];
   chats = f === "arch" ? chats.filter(c => P.arch.includes(c.id)) : chats.filter(c => !P.arch.includes(c.id));
   if (f === "unread") chats = chats.filter(c => um[c.id]);
   if (f.startsWith("l:")) chats = chats.filter(c => (P.cl[c.id] || []).includes(f.slice(2)));
@@ -630,8 +737,6 @@ function renderList() {
     return (toDate(b.lastAt || b.createdAt)?.getTime() || 0) - (toDate(a.lastAt || a.createdAt)?.getTime() || 0);
   });
   h += `<div class="section">${f === "arch" ? "المؤرشفة" : "محادثاتك"}</div>`;
-  const PIN = `<svg class="mini-ic" width="13" height="13" viewBox="0 0 24 24"><path d="M14 3l7 7-3 1-4 4 1 5-2 2-4-4-5 5-1-1 5-5-4-4 2-2 5 1 4-4 1-3z" fill="currentColor"/></svg>`;
-  const MUTE = `<svg class="mini-ic" width="13" height="13" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5zm5.5 3.5 5 7m0-7-5 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
   h += chats.length ? chats.map(c => {
     if (c._t !== "dm") return groupRow(c, um, P, PIN, MUTE);
     const pid = peerOf(c), u = S.users.get(pid) || { name: "مستخدم" }, n = um[c.id] || 0, muted = P.mute.includes(c.id);
@@ -654,6 +759,7 @@ $("#list").addEventListener("pointermove", e => { if (Math.abs(e.clientX - lpX) 
 $("#list").addEventListener("contextmenu", e => { const it = e.target.closest("[data-chat]"); if (it) { e.preventDefault(); clearTimeout(lpT); lpFired = true; openAnyMenu(it.dataset.open); } });
 $("#list").addEventListener("click", e => {
   if (lpFired) { lpFired = false; return; }
+  const chb = e.target.closest("[data-ch]"); if (chb) return chb.dataset.ch === "new" ? openCreate("channel") : openDiscover();
   const it = e.target.closest("[data-open]"); if (!it) return;
   const v = it.dataset.open; v === "public" ? openChat(null) : v.startsWith("g:") ? openGroup(v.slice(2)) : openChat(v);
 });
@@ -684,7 +790,7 @@ function openChat(peer) {
   closeChatSubs(); clearTimeout(S.typT);
   const id = peer ? dmId(peer) : "public";
   S.chat = { id, type: peer ? "dm" : "public", peer: peer || null, first: true, lastTyping: undefined, typingAt: 0, sentTyping: 0, sentRead: 0, reply: null, doc: null, sig: "", cleaned: new Set() };
-  $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open");
+  $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open"); layerOpen("chat", chatUiClose);
   $("#messages").innerHTML = ""; paintReply(); hideQuick(); markRead(id); applyComposerState(); paintHead(); renderList();
   S.unsub.msgs = onSnapshot(query(collection(db, "chats", id, "messages"), orderBy("at"), limitToLast(150)),
     snap => { S.chat && S.chat.id === id && renderMsgs(snap.docs); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
@@ -825,9 +931,18 @@ $("#messages").addEventListener("click", e => {
   const w = e.target.closest("[data-uid]"); if (w) return openProfile(w.dataset.uid);
   const q = e.target.closest("[data-q]"); if (q) return jumpTo(q.dataset.q);
   const im = e.target.closest("[data-img]"); if (im) return viewImage(im.src);
-  if (e.target.closest("a")) return;
-  const m = e.target.closest(".msg"); if (m && m.dataset.mid) openMsgMenu(m.dataset.mid);
 });
+let mT, mFired = false, mX = 0, mY = 0;
+const mBox = $("#messages");
+mBox.addEventListener("pointerdown", e => {
+  const m = e.target.closest(".msg"); if (!m || !m.dataset.mid || e.target.closest("a")) return;
+  mFired = false; mX = e.clientX; mY = e.clientY; clearTimeout(mT);
+  mT = setTimeout(() => { mFired = true; try { navigator.vibrate && navigator.vibrate(12); } catch {} openMsgMenu(m.dataset.mid); }, 450);
+});
+mBox.addEventListener("pointermove", e => { if (Math.abs(e.clientX - mX) + Math.abs(e.clientY - mY) > 10) clearTimeout(mT); });
+["pointerup", "pointerleave", "pointercancel"].forEach(ev => mBox.addEventListener(ev, () => clearTimeout(mT)));
+mBox.addEventListener("contextmenu", e => { e.preventDefault(); const m = e.target.closest(".msg"); if (m && m.dataset.mid && !mFired) { clearTimeout(mT); mFired = true; openMsgMenu(m.dataset.mid); } });
+mBox.addEventListener("click", e => { if (mFired) { mFired = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
 
 /* قايمة المحادثة + التصنيفات + المختفية */
 function openChatMenu(peer) {
@@ -925,22 +1040,24 @@ async function sendTo(c, payload) {
   if (c.type === "group" || c.type === "channel") {
     const g = (S.chat && S.chat.id === c.id && S.chat.group) || S.groups.find(x => x.id === c.id);
     if (!isGMember(g) || (g.kind === "channel" && !isGAdmin(g))) { toast("مش مسموحلك تبعت هنا"); throw new Error("blocked"); }
-    await addDoc(collection(db, "groups", c.id, "messages"), { uid: S.user.uid, at: serverTimestamp(), ...payload });
     const prev = payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
+    const wr = addDoc(collection(db, "groups", c.id, "messages"), { uid: S.user.uid, at: serverTimestamp(), ...payload });
     updateDoc(doc(db, "groups", c.id), { lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, lastName: (S.me.name || "").slice(0, 40) }).catch(e => console.error(e));
     pushNotify("g:" + c.id, prev);
+    await wr;
     return;
   }
   const meta = S.chats.find(x => x.id === c.id), ttl = c.peer ? ((S.chat && S.chat.id === c.id && S.chat.doc ? S.chat.doc.ttl : meta && meta.ttl) || 0) : 0;
   const data = { uid: S.user.uid, at: serverTimestamp(), ...payload };
   if (ttl) data.exp = Date.now() + ttl * 1000;
-  await addDoc(collection(db, "chats", c.id, "messages"), data);
+  const wr = addDoc(collection(db, "chats", c.id, "messages"), data);
   if (c.peer) {
     const prev = payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
     if (S.chat && S.chat.id === c.id) S.chat.sentTyping = 0;
     setDoc(doc(db, "chats", c.id), { members: [S.user.uid, c.peer].sort(), lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, typing: { [S.user.uid]: 0 } }, { merge: true }).catch(e => console.error(e));
     pushNotify(c.id, prev);
   }
+  await wr;
 }
 function hideQuick() { $("#quickPop").classList.add("hidden"); $("#quickPop").innerHTML = ""; }
 function quickSuggest() {
@@ -1007,7 +1124,7 @@ const isGAdmin = g => !!g && isGMember(g) && (g.owner === S.user.uid || (g.admin
 const gCount = g => (g.members || []).length + (g.kind === "channel" ? " متابع" : " عضو");
 const gAvatar = (g, cls = "") => `<div class="avatar ${g.kind === "channel" ? "chan" : "grp"} ${cls}">${g.photo && String(g.photo).startsWith("data:image/") ? `<img src="${esc(g.photo)}" alt="">` : esc((g.name || "?").trim().charAt(0).toUpperCase())}</div>`;
 const CHAN_IC = `<svg class="mini-ic" width="14" height="14" viewBox="0 0 24 24" aria-label="قناة"><path d="M3 10v4l11 5V5L3 10zm13-1.5v7a3.5 3.5 0 0 0 0-7zM5 15l1 5h3l-1-4" fill="currentColor"/></svg>`;
-const inviteLink = g => `${location.origin}${location.pathname}?g=${g.id}`;
+const inviteLink = g => g.kind === "channel" && g.handle ? `${location.origin}${location.pathname}?c=${g.handle}` : `${location.origin}${location.pathname}?g=${g.id}`;
 const copyText = (t, ok) => (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast(ok), () => toast(t));
 function closeChatSubs() { ["msgs", "peerDoc", "chatDoc", "gdoc"].forEach(k => { if (S.unsub[k]) { S.unsub[k](); delete S.unsub[k]; } }); }
 
@@ -1022,7 +1139,7 @@ async function openGroup(gid) {
   if (!isGMember(g) && !(g.kind === "channel" && g.public)) return openJoin(g);
   closeChatSubs(); clearTimeout(S.typT);
   S.chat = { id: gid, type: g.kind, peer: null, group: g, first: true, reply: null, doc: null, sig: "", cleaned: new Set(), lastTyping: undefined, typingAt: 0, sentTyping: 0, sentRead: 0 };
-  $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open");
+  $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open"); layerOpen("chat", chatUiClose);
   $("#messages").innerHTML = ""; paintReply(); hideQuick(); markRead(gid); applyComposerState(); paintHead(); renderList();
   S.unsub.msgs = onSnapshot(query(collection(db, "groups", gid, "messages"), orderBy("at"), limitToLast(150)),
     snap => { S.chat && S.chat.id === gid && renderMsgs(snap.docs); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
