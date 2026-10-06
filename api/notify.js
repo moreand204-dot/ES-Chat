@@ -22,7 +22,7 @@ async function push(db, uids, data) {
     tokens += msgs.length;
     for (let j = 0; j < msgs.length; j += 500) {
       const part = msgs.slice(j, j + 500);
-      const r = await admin.messaging().sendEachForMulticast({ tokens: part.map(x => x.tok), data, webpush: { headers: { Urgency: "high", TTL: "3600" } } });
+      const r = await admin.messaging().sendEachForMulticast({ tokens: part.map(x => x.tok), data, webpush: { headers: { Urgency: "high", TTL: "604800" } } });
       sent += r.successCount; failed += r.failureCount;
       await Promise.all(r.responses.map(async (x, k) => {
         const c = x.error && x.error.code; if (!c) return; codes.push(c);
