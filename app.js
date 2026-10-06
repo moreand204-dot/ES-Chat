@@ -434,7 +434,7 @@ const switchRow = (id, on, label, sub) => `<label class="tg-row"><div><b>${label
 function openEdit() { const sh = openModal(`<div id="editBox"></div>`); renderForm(sh.querySelector("#editBox"), "edit"); }
 const ACCENTS = [["blue", "#2f6bff", "أزرق"], ["violet", "#8b5cf6", "بنفسجي"], ["emerald", "#10b981", "أخضر"], ["gold", "#f59e0b", "ذهبي"]];
 const WALLS = [["dots", "نقط"], ["grid", "شبكة"], ["none", "سادة"]];
-function applyTheme() { const r = document.documentElement; r.dataset.accent = LS.get("accent", "blue"); r.dataset.wp = LS.get("wp", "dots"); }
+function applyTheme() { const r = document.documentElement; r.dataset.accent = LS.get("accent", "blue"); r.dataset.wp = LS.get("wp", "dots"); r.dataset.fs = LS.get("fs", "m"); }
 applyTheme();
 function openSettings() {
   const me = S.me, perm = canNotify() ? Notification.permission : "unsupported";
@@ -454,6 +454,7 @@ function openSettings() {
     <div class="panel-h">المظهر</div>
     <div class="swatches">${ACCENTS.map(([k, c, t]) => `<button type="button" class="sw big ${LS.get("accent", "blue") === k ? "on" : ""}" data-acc="${k}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div>
     <div class="seg3">${WALLS.map(([k, t]) => `<button type="button" class="${LS.get("wp", "dots") === k ? "on" : ""}" data-wp="${k}">${t}</button>`).join("")}</div>
+    <div class="panel-h">حجم الخط</div><div class="seg3">${[["s", "صغير"], ["m", "متوسط"], ["l", "كبير"]].map(([k, t]) => `<button type="button" class="${LS.get("fs", "m") === k ? "on" : ""}" data-fs="${k}">${t}</button>`).join("")}</div>
     <div class="panel-h">أدوات الأعمال</div>
     <div class="menu" style="padding:0"><button class="mrow" id="stLbl"><span>التصنيفات</span><small>${S.prefs.labels.length}</small></button>
       <button class="mrow" id="stQr"><span>الردود السريعة</span><small>${S.prefs.quick.length}</small></button>
@@ -465,6 +466,7 @@ function openSettings() {
   q("#stLbl").onclick = manageLabels; q("#stQr").onclick = manageQuick; q("#stStar").onclick = openStars;
   sh.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { LS.set("accent", b.dataset.acc); applyTheme(); sh.querySelectorAll("[data-acc]").forEach(x => x.classList.toggle("on", x === b)); });
   sh.querySelectorAll("[data-wp]").forEach(b => b.onclick = () => { LS.set("wp", b.dataset.wp); applyTheme(); sh.querySelectorAll("[data-wp]").forEach(x => x.classList.toggle("on", x === b)); });
+  sh.querySelectorAll("[data-fs]").forEach(b => b.onclick = () => { LS.set("fs", b.dataset.fs); applyTheme(); sh.querySelectorAll("[data-fs]").forEach(x => x.classList.toggle("on", x === b)); });
   q("#stNotif").onchange = async e => {
     if (e.target.checked) { const p = await enableNotifs(); if (p !== "granted") { e.target.checked = false; return; } LS.set("notifs", true); }
     else { LS.set("notifs", false); unregisterPush(); }
@@ -509,7 +511,7 @@ function applyComposerState() {
   if (c && (c.type === "group" || c.type === "channel")) {
     const g = c.group;
     if (!isGMember(g)) { readOnly = true; roHtml = g.joinOpen ? `<button class="btn-primary" id="roJoin">${g.kind === "channel" ? "متابعة القناة" : "انضمام للمجموعة"}</button>` : `<span>رابط الانضمام مقفول.</span>`; }
-    else if (g.kind === "channel" && !isGAdmin(g)) { readOnly = true; roHtml = `<span>القناة دي للقراءة بس. المشرفين هم اللي بينشروا.</span>`; }
+    else if ((g.kind === "channel" || g.sendAdmins) && !isGAdmin(g)) { readOnly = true; roHtml = `<span>${g.kind === "channel" ? "القناة دي للقراءة بس. المشرفين هم اللي بينشروا." : "الإرسال هنا للمشرفين بس."}</span>`; }
   }
   form.classList.toggle("hidden", readOnly); ro.classList.toggle("hidden", !readOnly); ro.innerHTML = roHtml;
   const j = $("#roJoin"); if (j) j.onclick = async () => { j.disabled = true; if (!(await joinGroup(c.group))) j.disabled = false; };
@@ -600,7 +602,7 @@ function enterApp() {
 }
 function showEmpty() {
   S.chat = null; closeChatSubs();
-  $("#chatHead").innerHTML = ""; $("#composerWrap").classList.add("hidden");
+  $("#chatHead").innerHTML = ""; $("#chatSearchBtn").classList.add("hidden"); $("#pinBar").classList.add("hidden"); $("#composerWrap").classList.add("hidden");
   $("#messages").innerHTML = `<div class="empty"><div class="big">ES Chat Pro</div><p>ابحث عن صاحبك بالـ @يوزر عشان تبدأ محادثة.</p></div>`;
   $("#app").classList.remove("open"); layerClose("chat");
 }
@@ -728,6 +730,7 @@ function renderList() {
   }
   let chats = [...S.chats.filter(c => !P.block.includes(peerOf(c))).map(c => ({ ...c, _t: "dm" })), ...S.groups.filter(g => g.kind !== "channel").map(g => ({ ...g, _t: g.kind }))];
   chats = f === "arch" ? chats.filter(c => P.arch.includes(c.id)) : chats.filter(c => !P.arch.includes(c.id));
+  const nm = $("#search").value.trim().toLowerCase(); if (nm && !/^[@#]/.test(nm)) chats = chats.filter(c => (((c._t === "dm" ? (S.users.get(peerOf(c)) || {}).name : c.name) || "") + "").toLowerCase().includes(nm));
   if (f === "unread") chats = chats.filter(c => um[c.id]);
   if (f.startsWith("l:")) chats = chats.filter(c => (P.cl[c.id] || []).includes(f.slice(2)));
   chats.sort((a, b) => {
@@ -775,8 +778,14 @@ function statusOf(u, c) {
   }
   return { t: "", cls: "" };
 }
-function paintHead() {
-  const c = S.chat; if (!c) return;
+function paintHead() { paintHeadInner(); paintPin(); }
+function paintPin() {
+  const b = $("#pinBar"), g = S.chat && S.chat.group, p = g && g.pin;
+  if (!p) { b.classList.add("hidden"); b.innerHTML = ""; return; }
+  b.innerHTML = `<span class="pin-i">📌</span><div><b>رسالة مثبتة</b><span>${esc(p.t || "")}</span></div>`; b.classList.remove("hidden"); b.onclick = () => jumpTo(p.id);
+}
+function paintHeadInner() {
+  const c = S.chat; if (!c) return; $("#chatSearchBtn").classList.remove("hidden");
   $("#chatMenuBtn").classList.toggle("hidden", c.type === "public");
   if (c.type === "group" || c.type === "channel") {
     const g = c.group; $("#chatHead").innerHTML = `${gAvatar(g)}<div class="t"><b>${g.kind === "channel" ? CHAN_IC : ""}${esc(g.name)}</b><small>${esc(gCount(g))}${g.handle ? " · <bdi>#" + esc(g.handle) + "</bdi>" : ""}</small></div>`; return;
@@ -885,6 +894,7 @@ function openMsgMenu(mid) {
   if (m.text) rows.push(["copy", "نسخ"]);
   rows.push(["star", starred ? "إزالة النجمة" : "تمييز بنجمة"], ["fwd", "إعادة توجيه"], ["hide", "حذف عندي"]);
   const isG = c.type === "group" || c.type === "channel";
+  if (isG && isGAdmin(c.group)) rows.push(["pin", c.group.pin && c.group.pin.id === mid ? "إلغاء التثبيت" : "تثبيت في الأعلى"]);
   if (c.type === "dm" && mine) rows.push(["del", "حذف للجميع", true]);
   else if (isG && (mine || isGAdmin(c.group))) rows.push(["del", mine ? "حذف للجميع" : "حذف (مشرف)", true]);
   else if (c.type === "public" && isOwner()) rows.push(["del", "حذف من الغرفة (المالك)", true]);
@@ -894,6 +904,7 @@ function openMsgMenu(mid) {
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
     if (a === "reply") { c.reply = { id: mid, uid: m.uid, t: prev }; paintReply(); $("#input").focus(); }
     else if (a === "copy") { (navigator.clipboard ? navigator.clipboard.writeText(m.text) : Promise.reject()).then(() => toast("اتنسخت"), () => toast("تعذّر النسخ")); }
+    else if (a === "pin") { const cur = c.group.pin && c.group.pin.id === mid; updateDoc(doc(db, "groups", c.id), { pin: cur ? deleteField() : { id: mid, t: prev.slice(0, 70) } }).then(() => toast(cur ? "اتشال التثبيت" : "اتثبتت")).catch(() => toast("تعذّر التثبيت")); }
     else if (a === "star") {
       const stars = starred ? S.prefs.stars.filter(s => !(s.c === c.id && s.m === mid)) : [...S.prefs.stars, { c: c.id, m: mid, t: prev, u: m.uid, a: toDate(m.at)?.getTime() || Date.now() }].slice(-100);
       savePrefs({ stars }); renderMsgs(c.lastDocs); toast(starred ? "اتشالت النجمة" : "اتميزت بنجمة");
@@ -967,6 +978,19 @@ function openChatMenu(peer) {
     }
   };
 }
+function openChatSearch() {
+  const c = S.chat; if (!c) return;
+  const sh = openModal(`<div class="menu"><div class="menu-h">بحث في المحادثة</div><div class="field"><input id="csQ" placeholder="اكتب كلمة..." autocomplete="off"></div><div id="csR"><div class="empty-list">بيبحث في آخر 150 رسالة محمّلة.</div></div></div>`);
+  const inp = sh.querySelector("#csQ"), out = sh.querySelector("#csR");
+  inp.oninput = () => {
+    const t = inp.value.trim().toLowerCase(); if (!t) { out.innerHTML = `<div class="empty-list">بيبحث في آخر 150 رسالة محمّلة.</div>`; return; }
+    const hits = (c.lastDocs || []).filter(d => { const m = d.data(); return !m.deleted && (m.text || "").toLowerCase().includes(t); }).reverse().slice(0, 40);
+    out.innerHTML = hits.length ? hits.map(d => { const m = d.data(), dt = toDate(m.at); return `<div class="row-item" data-j="${esc(d.id)}"><div class="meta"><div class="name">${esc(nameOf(m.uid))}</div><small>${esc((m.text || "").slice(0, 90))}${dt ? " · " + esc(listTime(dt)) : ""}</small></div></div>`; }).join("") : `<div class="empty-list">مفيش نتايج.</div>`;
+  };
+  out.onclick = e => { const r = e.target.closest("[data-j]"); if (r) { const id = r.dataset.j; closeModal(); setTimeout(() => jumpTo(id), 120); } };
+  setTimeout(() => inp.focus(), 50);
+}
+$("#chatSearchBtn").onclick = openChatSearch;
 $("#chatMenuBtn").onclick = () => { if (!S.chat) return; if (S.chat.peer) openChatMenu(S.chat.peer); else if (S.chat.group) openGroupMenu(S.chat.id); };
 function openTtlPicker(peer, cur) {
   const opts = [[0, "إيقاف"], [86400, "24 ساعة"], [604800, "7 أيام"], [7776000, "90 يوم"]];
@@ -1039,7 +1063,7 @@ async function sendTo(c, payload) {
   if (c.peer && S.prefs.block.includes(c.peer)) { toast("ألغي حظر المستخدم الأول"); throw new Error("blocked"); }
   if (c.type === "group" || c.type === "channel") {
     const g = (S.chat && S.chat.id === c.id && S.chat.group) || S.groups.find(x => x.id === c.id);
-    if (!isGMember(g) || (g.kind === "channel" && !isGAdmin(g))) { toast("مش مسموحلك تبعت هنا"); throw new Error("blocked"); }
+    if (!isGMember(g) || ((g.kind === "channel" || g.sendAdmins) && !isGAdmin(g))) { toast("مش مسموحلك تبعت هنا"); throw new Error("blocked"); }
     const prev = payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
     const wr = addDoc(collection(db, "groups", c.id, "messages"), { uid: S.user.uid, at: serverTimestamp(), ...payload });
     updateDoc(doc(db, "groups", c.id), { lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, lastName: (S.me.name || "").slice(0, 40) }).catch(e => console.error(e));
@@ -1147,7 +1171,7 @@ async function openGroup(gid) {
     if (!S.chat || S.chat.id !== gid) return;
     if (!s.exists()) { toast("اتحذفت"); showEmpty(); return; }
     const old = S.chat.group; S.chat.group = { id: gid, ...s.data() };
-    const sig = g => JSON.stringify([isGMember(g), isGAdmin(g)]);
+    const sig = g => JSON.stringify([isGMember(g), isGAdmin(g), !!g.sendAdmins]);
     paintHead();
     if (sig(old) !== sig(S.chat.group)) { applyComposerState(); if (S.chat.lastDocs) renderMsgs(S.chat.lastDocs); }
   }, () => {});
@@ -1155,16 +1179,29 @@ async function openGroup(gid) {
 function openJoin(g) {
   const sh = openModal(`<div class="prof">${gAvatar(g, "big")}<h3>${esc(g.name)}</h3><div class="chips"><span class="chip">${g.kind === "channel" ? "قناة" : "مجموعة"}</span><span class="chip">${gCount(g)}</span></div>
     ${g.desc ? `<div class="bio">${esc(g.desc)}</div>` : ""}
-    ${g.joinOpen ? `<div class="actions"><button class="btn-primary" id="jGo">${g.kind === "channel" ? "متابعة القناة" : "انضمام للمجموعة"}</button></div>` : `<div class="hint err" style="text-align:center">رابط الانضمام مقفول. اطلب من مشرف يضيفك.</div>`}</div>`);
+    ${g.joinOpen ? `<div class="actions"><button class="btn-primary" id="jGo">${g.kind === "channel" ? "متابعة القناة" : g.approve ? "طلب الانضمام" : "انضمام للمجموعة"}</button></div>` : `<div class="hint err" style="text-align:center">رابط الانضمام مقفول. اطلب من مشرف يضيفك.</div>`}</div>`);
   const b = sh.querySelector("#jGo"); if (b) b.onclick = async () => { b.disabled = true; if (await joinGroup(g)) { closeModal(); openGroup(g.id); } else b.disabled = false; };
 }
 async function joinGroup(g) {
+  if (g.approve && g.kind === "group") {
+    try { await setDoc(doc(db, "groups", g.id, "requests", S.user.uid), { at: serverTimestamp(), name: (S.me.name || "").slice(0, 40) }); toast("اتبعت طلب الانضمام. مستني موافقة المشرف"); }
+    catch { toast("تعذّر إرسال الطلب"); }
+    return false;
+  }
   try { await updateDoc(doc(db, "groups", g.id), { members: arrayUnion(S.user.uid) }); toast(g.kind === "channel" ? "بقيت متابع للقناة" : "اتضمّيت للمجموعة"); return true; }
   catch (e) { console.error(e); toast("تعذّر الانضمام (ممكن الرابط اتقفل أو العدد اكتمل)"); return false; }
 }
 async function leaveGroup(g) {
-  if (!confirm(g.kind === "channel" ? "تلغي متابعة القناة؟" : "تخرج من المجموعة؟")) return;
-  try { await updateDoc(doc(db, "groups", g.id), { members: arrayRemove(S.user.uid), admins: arrayRemove(S.user.uid) }); closeModal(); if (S.chat && S.chat.id === g.id) showEmpty(); toast("تم"); }
+  const me = S.user.uid, mem = g.members || [];
+  let patch = { members: arrayRemove(me), admins: arrayRemove(me) };
+  if (g.owner === me) {
+    const next = (g.admins || []).find(a => a !== me && mem.includes(a)) || mem.find(m => m !== me);
+    if (!next) return toast("إنت الوحيد هنا. لو عايز تقفلها احذفها");
+    await ensureUsers([next]);
+    if (!confirm("هتنقل الملكية لـ " + ((S.users.get(next) || {}).name || "عضو") + " وتخرج. متأكد؟")) return;
+    patch = { owner: next, members: mem.filter(x => x !== me), admins: [...new Set([...(g.admins || []).filter(x => x !== me), next])] };
+  } else if (!confirm(g.kind === "channel" ? "تلغي متابعة القناة؟" : "تخرج من المجموعة؟")) return;
+  try { await updateDoc(doc(db, "groups", g.id), patch); closeModal(); if (S.chat && S.chat.id === g.id) showEmpty(); toast("تم"); }
   catch { toast("تعذّر الخروج"); }
 }
 
@@ -1247,8 +1284,11 @@ function openCreate(kind) {
 async function openGroupInfo(gid) {
   const g = await fetchGroup(gid); if (!g) return;
   const me = S.user.uid, admin = isGAdmin(g), owner = g.owner === me, member = isGMember(g), ch = g.kind === "channel";
-  const ids = ch && !admin ? (g.admins || []) : (g.members || []).slice(0, 100);
-  await ensureUsers(ids);
+  const ids = ch ? (g.admins || []) : (g.members || []).slice(0, 100);
+  let reqs = [];
+  if (admin && !ch && g.approve) { try { reqs = (await getDocs(collection(db, "groups", gid, "requests"))).docs.map(d => d.id); } catch {} }
+  await ensureUsers([...ids, ...reqs]);
+  const reqHtml = reqs.length ? `<div class="panel-h">طلبات الانضمام (${reqs.length})</div>` + reqs.map(id => { const u = S.users.get(id) || { name: "مستخدم" }; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div><div class="end"><button class="btn-mini" data-ok="${esc(id)}">قبول</button><button class="btn-danger sm" data-no="${esc(id)}">رفض</button></div></div>`; }).join("") : "";
   const role = id => id === g.owner ? "المالك" : (g.admins || []).includes(id) ? "مشرف" : "";
   const rows = ids.map(id => { const u = S.users.get(id) || { name: "مستخدم" }, r = role(id);
     const canRm = admin && id !== g.owner && id !== me && (owner || !(g.admins || []).includes(id));
@@ -1258,14 +1298,22 @@ async function openGroupInfo(gid) {
       <div class="chips"><span class="chip">${ch ? "قناة" : "مجموعة"}</span><span class="chip">${gCount(g)}</span>${g.handle ? `<span class="chip"><bdi>#${esc(g.handle)}</bdi></span>` : ""}</div>
       ${g.desc ? `<div class="bio">${esc(g.desc)}</div>` : ""}
       <div class="actions">${g.joinOpen ? `<button class="btn-ghost" id="giLink">نسخ رابط الدعوة</button>` : ""}${admin ? `<button class="btn-primary" id="giEdit">تعديل</button>` : ""}</div></div>
-    ${admin ? `<div class="panel-h">الإعدادات</div>${switchRow("giOpen", !!g.joinOpen, "رابط الدعوة شغال", "لو اتقفل محدش يقدر ينضم بالرابط")}${ch ? switchRow("giPub", !!g.public, "قناة عامة", "تظهر في استكشاف القنوات") : ""}
+    ${admin ? `<div class="panel-h">الإعدادات</div>${switchRow("giOpen", !!g.joinOpen, "رابط الدعوة شغال", "لو اتقفل محدش يقدر ينضم بالرابط")}${ch ? switchRow("giPub", !!g.public, "قناة عامة", "تظهر في استكشاف القنوات") : switchRow("giSend", !!g.sendAdmins, "الإرسال للمشرفين فقط", "باقي الأعضاء بيقروا بس") + switchRow("giApr", !!g.approve, "الموافقة على الأعضاء الجدد", "اللي ينضم بالرابط لازم مشرف يوافق عليه")}
       <div class="field" style="margin-top:14px"><label for="giAdd">إضافة ${ch ? "متابع" : "عضو"} باليوزر</label><div class="inline-add"><input type="text" id="giAdd" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-mini" id="giAddBtn">إضافة</button></div><div class="hint" id="giH"></div></div>` : ""}
-    <div class="panel-h">${ch && !admin ? "المشرفين" : "الأعضاء"}</div><div id="giList">${rows}</div>${ch && !admin ? `<div class="hint">${gCount(g)}</div>` : (g.members || []).length > 100 ? `<div class="hint">عرض أول 100 فقط</div>` : ""}
-    <div class="actions" style="margin-top:20px">${member && !owner ? `<button class="btn-danger" id="giLeave">${ch ? "إلغاء المتابعة" : "الخروج من المجموعة"}</button>` : ""}${owner ? `<button class="btn-danger" id="giDel">حذف ${ch ? "القناة" : "المجموعة"}</button>` : ""}</div>`, true);
+    ${reqHtml}
+    <div class="panel-h">${ch ? "المشرفين" : "الأعضاء"}</div><div id="giList">${rows}</div>${ch ? `<div class="hint">${gCount(g)} · قايمة المتابعين مخفية للخصوصية (حتى عن المشرفين)</div>` : (g.members || []).length > 100 ? `<div class="hint">عرض أول 100 فقط</div>` : ""}
+    <div class="actions" style="margin-top:20px">${member && (!owner || (g.members || []).length > 1) ? `<button class="btn-danger" id="giLeave">${owner ? "الخروج ونقل الملكية" : ch ? "إلغاء المتابعة" : "الخروج من المجموعة"}</button>` : ""}${owner ? `<button class="btn-danger" id="giDel">حذف ${ch ? "القناة" : "المجموعة"}</button>` : ""}</div>`, true);
   const q = id => sh.querySelector(id), up = patch => updateDoc(doc(db, "groups", gid), patch).then(() => openGroupInfo(gid)).catch(() => toast("تعذّر الحفظ"));
   const l = q("#giLink"); if (l) l.onclick = () => copyText(inviteLink(g), "اتنسخ رابط الدعوة");
   const ed = q("#giEdit"); if (ed) ed.onclick = () => openEditGroup(g);
   const o = q("#giOpen"); if (o) o.onchange = e => up({ joinOpen: e.target.checked });
+  const ap = q("#giApr"); if (ap) ap.onchange = e => up({ approve: e.target.checked });
+  sh.querySelectorAll("[data-ok],[data-no]").forEach(b => b.onclick = async () => {
+    const id = b.dataset.ok || b.dataset.no;
+    try { if (b.dataset.ok) await updateDoc(doc(db, "groups", gid), { members: arrayUnion(id) }); await deleteDoc(doc(db, "groups", gid, "requests", id)); toast(b.dataset.ok ? "اتقبل" : "اترفض"); openGroupInfo(gid); }
+    catch { toast("تعذّر التنفيذ (ممكن العدد اكتمل)"); }
+  });
+  const sb = q("#giSend"); if (sb) sb.onchange = e => up({ sendAdmins: e.target.checked });
   const pb = q("#giPub"); if (pb) pb.onchange = e => up({ public: e.target.checked });
   const ab = q("#giAddBtn"); if (ab) ab.onclick = async () => {
     const name = q("#giAdd").value.trim().toLowerCase().replace(/^@/, ""), h = q("#giH"); h.className = "hint";
