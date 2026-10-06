@@ -60,7 +60,7 @@ module.exports = async (req, res) => {
       if (!g.exists) return res.status(404).json({ error: "no group" });
       const G = g.data();
       if (!(G.members || []).includes(uid)) return res.status(403).json({ error: "not member" });
-      if (G.kind === "channel" && G.owner !== uid && !(G.admins || []).includes(uid)) return res.status(403).json({ error: "not admin" });
+      if ((G.kind === "channel" || G.sendAdmins) && G.owner !== uid && !(G.admins || []).includes(uid)) return res.status(403).json({ error: "not admin" });
       const cand = (G.members || []).filter(x => x !== uid).slice(0, 300);
       const prefs = await Promise.all(cand.map(async u => ({ u, p: await prefsOf(db, u) })));
       const to = prefs.filter(({ p }) => !(p.mute || []).includes(gid) && !(p.block || []).includes(uid)).map(x => x.u);
