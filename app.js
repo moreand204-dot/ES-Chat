@@ -13,7 +13,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const S = { user: null, me: null, users: new Map(), chats: [], chat: null, found: null, site: {}, groups: [], gseen: new Map(), seen: new Map(), unsub: {}, view: "boot", filter: "all", prefs: { pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] } };
 const DEFAULT_PREFS = () => ({ pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] });
-try { const u = new URLSearchParams(location.search).get("u"); if (u) sessionStorage.es_u = u; const gp = new URLSearchParams(location.search).get("g"); if (gp) sessionStorage.es_g = gp; const cp = new URLSearchParams(location.search).get("c"); if (cp) sessionStorage.es_c = cp; } catch {}
+try { const u = new URLSearchParams(location.search).get("u"); if (u) sessionStorage.es_u = u; const gp = new URLSearchParams(location.search).get("g"); if (gp) sessionStorage.es_g = gp; const cp = new URLSearchParams(location.search).get("c"); if (cp) sessionStorage.es_c = cp; const kp = new URLSearchParams(location.search).get("k"); if (kp && gp) sessionStorage.es_k = gp + "." + kp; const ap = new URLSearchParams(location.search).get("ai"); if (ap) sessionStorage.es_ai = ap; } catch {}
 const LS = {
   get: (k, d) => { try { const v = localStorage.getItem("es_" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem("es_" + k, JSON.stringify(v)); } catch {} },
@@ -451,6 +451,7 @@ function openSettings() {
     <div class="panel-h">الخصوصية</div>
     ${switchRow("stHide", !!me.hideLastSeen, "إخفاء حالتي", "محدش هيشوف إنك متصل أو آخر ظهور أو إنك بتكتب")}
     ${switchRow("stRR", me.readReceipts !== false, "تأكيد القراءة (✓✓)", "لو قفلته محدش هيعرف إنك قريت، وإنت كمان مش هتشوف إن اتقرت رسايلك")}
+    ${switchRow("stNoAdd", me.noAdd === true, "منع إضافتي للمجموعات", "محدش يقدر يضيفك لمجموعة بدون ما تنضم بنفسك بالرابط")}
     <div class="panel-h">المظهر</div>
     <div class="swatches">${ACCENTS.map(([k, c, t]) => `<button type="button" class="sw big ${LS.get("accent", "blue") === k ? "on" : ""}" data-acc="${k}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div>
     <div class="seg3">${WALLS.map(([k, t]) => `<button type="button" class="${LS.get("wp", "dots") === k ? "on" : ""}" data-wp="${k}">${t}</button>`).join("")}</div>
@@ -479,6 +480,10 @@ function openSettings() {
     const on = e.target.checked;
     try { await updateDoc(doc(db, "users", S.user.uid), on ? { hideLastSeen: true, lastSeen: deleteField() } : { hideLastSeen: false }); if (!on) setTimeout(beat, 300); toast(on ? "حالتك مخفية" : "حالتك ظاهرة"); }
     catch { e.target.checked = !on; toast("تعذّر الحفظ"); }
+  };
+  q("#stNoAdd").onchange = async e => {
+    try { await updateDoc(doc(db, "users", S.user.uid), { noAdd: e.target.checked }); toast(e.target.checked ? "محدش هيقدر يضيفك" : "ممكن يضيفوك"); }
+    catch { e.target.checked = !e.target.checked; toast("تعذّر الحفظ"); }
   };
   q("#stRR").onchange = async e => {
     try { await updateDoc(doc(db, "users", S.user.uid), { readReceipts: e.target.checked }); toast(e.target.checked ? "تأكيد القراءة شغال" : "تأكيد القراءة مقفول"); }
@@ -513,6 +518,7 @@ function applyComposerState() {
     if (!isGMember(g)) { readOnly = true; roHtml = g.joinOpen ? `<button class="btn-primary" id="roJoin">${g.kind === "channel" ? "متابعة القناة" : "انضمام للمجموعة"}</button>` : `<span>رابط الانضمام مقفول.</span>`; }
     else if ((g.kind === "channel" || g.sendAdmins) && !isGAdmin(g)) { readOnly = true; roHtml = `<span>${g.kind === "channel" ? "القناة دي للقراءة بس. المشرفين هم اللي بينشروا." : "الإرسال هنا للمشرفين بس."}</span>`; }
   }
+  if (!readOnly && c && c.group && isMutedG(c.group) && !isGAdmin(c.group)) { readOnly = true; roHtml = `<span>المشرف كتمك لحد ${esc(new Date(mutedUntil(c.group)).toLocaleString("ar-EG"))}</span>`; }
   form.classList.toggle("hidden", readOnly); ro.classList.toggle("hidden", !readOnly); ro.innerHTML = roHtml;
   const j = $("#roJoin"); if (j) j.onclick = async () => { j.disabled = true; if (!(await joinGroup(c.group))) j.disabled = false; };
   const blocked = !!(c && c.peer && S.prefs.block.includes(c.peer));
@@ -599,6 +605,7 @@ function enterApp() {
   const un = sessionStorage.es_u; if (un) { sessionStorage.removeItem("es_u"); history.replaceState(null, "", location.pathname); openByUsername(un); }
   const cq = sessionStorage.es_c; if (cq) { sessionStorage.removeItem("es_c"); history.replaceState(null, "", location.pathname); openByHandle(cq); }
   const gq = sessionStorage.es_g; if (gq) { sessionStorage.removeItem("es_g"); history.replaceState(null, "", location.pathname); openGroup(gq); }
+  const aiq = sessionStorage.es_ai; if (aiq) { sessionStorage.removeItem("es_ai"); history.replaceState(null, "", location.pathname); acceptAdminInvite(aiq); }
 }
 function showEmpty() {
   S.chat = null; closeChatSubs();
@@ -857,6 +864,16 @@ function renderMsgs(docs) {
       if (m.img && String(m.img).startsWith("data:image/")) body += `<img class="mimg" src="${esc(m.img)}" alt="صورة" data-img>`;
       if (m.loc) body += `<a class="mloc" href="https://www.google.com/maps?q=${+m.loc.lat},${+m.loc.lng}" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg><span>موقع على الخريطة</span></a>`;
       if (m.text) body += `<div class="txt">${esc(m.text)}</div>`;
+      if (m.poll && Array.isArray(m.poll.o)) {
+        const vs = m.votes || {}, tot = Object.keys(vs).length, cn = m.poll.o.map(() => 0);
+        for (const v of Object.values(vs)) if (cn[v] !== undefined) cn[v]++;
+        body += `<div class="poll"><div class="pq">📊 ${esc(m.poll.q)}</div>${m.poll.o.map((t, i) => `<button type="button" class="po ${vs[me] === i ? "mine" : ""}" data-vote="${i}"><span class="pb" style="width:${tot ? Math.round(cn[i] * 100 / tot) : 0}%"></span><span class="pt">${esc(t)}</span><b>${cn[i]}</b></button>`).join("")}<div class="pn">${tot} صوت</div></div>`;
+      }
+      if (c.group && m.reactions) {
+        const cnt = {}; for (const [u, e] of Object.entries(m.reactions)) if (e) cnt[e] = (cnt[e] || 0) + 1;
+        const ks = Object.keys(cnt);
+        if (ks.length) body += `<div class="reacts">${ks.map(e => `<button type="button" class="re ${m.reactions[me] === e ? "mine" : ""}" data-re="${esc(e)}">${esc(e)} <b>${cnt[e]}</b></button>`).join("")}</div>`;
+      }
     }
     const seen = peerRead && peerRead.getTime() >= dt.getTime();
     const tick = mine && c.peer && !m.deleted ? (S.me.readReceipts === false ? TK1 : seen ? TK2 : TK1) : "";
@@ -885,6 +902,33 @@ function viewImage(src) {
   const sh = openModal(`<img class="full-img" src="${esc(src)}" alt=""><div class="actions"><a class="btn-ghost" download="es-chat.jpg" href="${esc(src)}" style="display:grid;place-items:center;text-decoration:none">حفظ الصورة</a></div>`, true);
 }
 
+async function voteTo(mid, i) {
+  const c = S.chat; if (!c || (c.group && !isGMember(c.group))) return;
+  const d = c.lastDocs && c.lastDocs.find(x => x.id === mid); if (!d) return;
+  const cur = (d.data().votes || {})[S.user.uid];
+  try { await updateDoc(doc(db, ...msgBase(c), mid), { ["votes." + S.user.uid]: cur === i ? deleteField() : i }); }
+  catch { toast("تعذّر التصويت"); }
+}
+function openPollMaker() {
+  const sh = openModal(`<div class="menu"><div class="menu-h">استفتاء جديد</div>
+    <div class="field"><input id="plQ" maxlength="200" placeholder="السؤال" autocomplete="off"></div>
+    <div id="plO"></div><button type="button" class="btn-ghost" id="plAdd">+ خيار</button>
+    <div class="hint" id="plH"></div><div class="actions"><button class="btn-primary" id="plGo">نشر الاستفتاء</button></div></div>`);
+  const box = sh.querySelector("#plO"), add = () => { if (box.children.length >= 12) return; const w = document.createElement("div"); w.className = "field"; w.innerHTML = `<input maxlength="80" placeholder="خيار ${box.children.length + 1}" autocomplete="off">`; box.appendChild(w); };
+  add(); add(); sh.querySelector("#plAdd").onclick = add;
+  sh.querySelector("#plGo").onclick = () => {
+    const q = sh.querySelector("#plQ").value.trim(), o = [...box.querySelectorAll("input")].map(x => x.value.trim()).filter(Boolean), h = sh.querySelector("#plH");
+    if (!q || o.length < 2) { h.className = "hint err"; h.textContent = "اكتب سؤال وخيارين على الأقل"; return; }
+    const c = S.chat; closeModal(); sendTo(c, { poll: { q, o } }).catch(() => {});
+  };
+}
+async function reactTo(mid, emo) {
+  const c = S.chat, g = c && c.group; if (!g || !isGMember(g) || g.noReact) return;
+  const d = c.lastDocs && c.lastDocs.find(x => x.id === mid); if (!d) return;
+  const cur = (d.data().reactions || {})[S.user.uid];
+  try { await updateDoc(doc(db, "groups", c.id, "messages", mid), { ["reactions." + S.user.uid]: cur === emo ? deleteField() : emo }); }
+  catch { toast("تعذّر التفاعل"); }
+}
 /* قايمة الرسالة */
 function openMsgMenu(mid) {
   const c = S.chat, d = c && c.lastDocs && c.lastDocs.find(x => x.id === mid); if (!d) return;
@@ -898,9 +942,11 @@ function openMsgMenu(mid) {
   if (c.type === "dm" && mine) rows.push(["del", "حذف للجميع", true]);
   else if (isG && (mine || isGAdmin(c.group))) rows.push(["del", mine ? "حذف للجميع" : "حذف (مشرف)", true]);
   else if (c.type === "public" && isOwner()) rows.push(["del", "حذف من الغرفة (المالك)", true]);
-  const prev = m.text ? m.text.slice(0, 70) : (m.img ? "📷 صورة" : "📍 موقع");
-  const sh = openModal(`<div class="menu"><div class="menu-h">${esc(prev)}</div>${rows.map(([a, t, dng]) => `<button class="mrow ${dng ? "danger" : ""}" data-a="${a}"><span>${t}</span></button>`).join("")}</div>`);
+  const prev = m.text ? m.text.slice(0, 70) : m.poll ? "📊 " + String(m.poll.q).slice(0, 60) : (m.img ? "📷 صورة" : "📍 موقع");
+  const canRe = isG && isGMember(c.group) && !c.group.noReact;
+  const sh = openModal(`<div class="menu"><div class="menu-h">${esc(prev)}</div>${canRe ? `<div class="emo-row">${EMO.map(e => `<button type="button" class="emo" data-e="${e}">${e}</button>`).join("")}</div>` : ""}${rows.map(([a, t, dng]) => `<button class="mrow ${dng ? "danger" : ""}" data-a="${a}"><span>${t}</span></button>`).join("")}</div>`);
   sh.querySelector(".menu").onclick = async e => {
+    const eb = e.target.closest("[data-e]"); if (eb) { closeModal(); reactTo(mid, eb.dataset.e); return; }
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
     if (a === "reply") { c.reply = { id: mid, uid: m.uid, t: prev }; paintReply(); $("#input").focus(); }
     else if (a === "copy") { (navigator.clipboard ? navigator.clipboard.writeText(m.text) : Promise.reject()).then(() => toast("اتنسخت"), () => toast("تعذّر النسخ")); }
@@ -909,7 +955,7 @@ function openMsgMenu(mid) {
       const stars = starred ? S.prefs.stars.filter(s => !(s.c === c.id && s.m === mid)) : [...S.prefs.stars, { c: c.id, m: mid, t: prev, u: m.uid, a: toDate(m.at)?.getTime() || Date.now() }].slice(-100);
       savePrefs({ stars }); renderMsgs(c.lastDocs); toast(starred ? "اتشالت النجمة" : "اتميزت بنجمة");
     }
-    else if (a === "fwd") openForward({ ...(m.text ? { text: m.text } : {}), ...(m.img ? { img: m.img } : {}), ...(m.loc ? { loc: m.loc } : {}) });
+    else if (a === "fwd") openForward({ ...(m.text ? { text: m.text } : {}), ...(m.img ? { img: m.img } : {}), ...(m.loc ? { loc: m.loc } : {}), ...(m.poll ? { poll: m.poll } : {}) });
     else if (a === "hide") { const k = "hid_" + c.id, l = LS.get(k, []); l.push(mid); LS.set(k, l.slice(-500)); renderMsgs(c.lastDocs); }
     else if (a === "del") {
       if (!confirm(c.type === "dm" ? "تحذف الرسالة عند الطرفين؟" : "تحذف الرسالة للجميع؟")) return;
@@ -940,6 +986,8 @@ function paintReply() {
 }
 $("#messages").addEventListener("click", e => {
   const w = e.target.closest("[data-uid]"); if (w) return openProfile(w.dataset.uid);
+  const pv = e.target.closest("[data-vote]"); if (pv) { const mm = pv.closest("[data-mid]"); if (mm) voteTo(mm.dataset.mid, +pv.dataset.vote); return; }
+  const rc = e.target.closest("[data-re]"); if (rc) { const mm = rc.closest("[data-mid]"); if (mm) reactTo(mm.dataset.mid, rc.dataset.re); return; }
   const q = e.target.closest("[data-q]"); if (q) return jumpTo(q.dataset.q);
   const im = e.target.closest("[data-img]"); if (im) return viewImage(im.src);
 });
@@ -979,14 +1027,26 @@ function openChatMenu(peer) {
   };
 }
 function openChatSearch() {
-  const c = S.chat; if (!c) return;
-  const sh = openModal(`<div class="menu"><div class="menu-h">بحث في المحادثة</div><div class="field"><input id="csQ" placeholder="اكتب كلمة..." autocomplete="off"></div><div id="csR"><div class="empty-list">بيبحث في آخر 150 رسالة محمّلة.</div></div></div>`);
+  const c = S.chat; if (!c) return; let flt = "all";
+  const FL = [["all", "الكل"], ["img", "صور"], ["link", "روابط"], ["loc", "مواقع"]];
+  const sh = openModal(`<div class="menu"><div class="menu-h">بحث في المحادثة</div><div class="field"><input id="csQ" placeholder="كلمة، أو from:اسم" autocomplete="off"></div><div class="seg3 four" id="csF">${FL.map(([k, t]) => `<button type="button" class="${k === "all" ? "on" : ""}" data-f="${k}">${t}</button>`).join("")}</div><div id="csR"></div></div>`);
   const inp = sh.querySelector("#csQ"), out = sh.querySelector("#csR");
-  inp.oninput = () => {
-    const t = inp.value.trim().toLowerCase(); if (!t) { out.innerHTML = `<div class="empty-list">بيبحث في آخر 150 رسالة محمّلة.</div>`; return; }
-    const hits = (c.lastDocs || []).filter(d => { const m = d.data(); return !m.deleted && (m.text || "").toLowerCase().includes(t); }).reverse().slice(0, 40);
-    out.innerHTML = hits.length ? hits.map(d => { const m = d.data(), dt = toDate(m.at); return `<div class="row-item" data-j="${esc(d.id)}"><div class="meta"><div class="name">${esc(nameOf(m.uid))}</div><small>${esc((m.text || "").slice(0, 90))}${dt ? " · " + esc(listTime(dt)) : ""}</small></div></div>`; }).join("") : `<div class="empty-list">مفيش نتايج.</div>`;
+  const go = () => {
+    let t = inp.value.trim().toLowerCase(), from = "";
+    const fm = /(?:^|\s)from:(\S+)/.exec(t); if (fm) { from = fm[1]; t = t.replace(fm[0], "").trim(); }
+    if (!t && !from && flt === "all") { out.innerHTML = `<div class="empty-list">بيبحث في آخر 150 رسالة محمّلة.</div>`; return; }
+    const hits = (c.lastDocs || []).filter(d => {
+      const m = d.data(); if (m.deleted) return false;
+      if (flt === "img" && !m.img) return false;
+      if (flt === "loc" && !m.loc) return false;
+      if (flt === "link" && !/https?:\/\/|www\./i.test(m.text || "")) return false;
+      if (from && !nameOf(m.uid).toLowerCase().includes(from)) return false;
+      return !t || ((m.text || "") + " " + (m.poll ? m.poll.q : "")).toLowerCase().includes(t);
+    }).reverse().slice(0, 40);
+    out.innerHTML = hits.length ? hits.map(d => { const m = d.data(), dt = toDate(m.at); return `<div class="row-item" data-j="${esc(d.id)}"><div class="meta"><div class="name">${esc(nameOf(m.uid))}</div><small>${esc(m.text ? m.text.slice(0, 90) : m.img ? "📷 صورة" : "📍 موقع")}${dt ? " · " + esc(listTime(dt)) : ""}</small></div></div>`; }).join("") : `<div class="empty-list">مفيش نتايج.</div>`;
   };
+  go(); inp.oninput = go;
+  sh.querySelector("#csF").onclick = e => { const b = e.target.closest("[data-f]"); if (!b) return; flt = b.dataset.f; sh.querySelectorAll("#csF button").forEach(x => x.classList.toggle("on", x === b)); go(); };
   out.onclick = e => { const r = e.target.closest("[data-j]"); if (r) { const id = r.dataset.j; closeModal(); setTimeout(() => jumpTo(id), 120); } };
   setTimeout(() => inp.focus(), 50);
 }
@@ -1057,6 +1117,9 @@ function openStars() {
 }
 
 /* الرسايل: الكتابة والإرسال والمرفقات */
+const mutedUntil = g => (g && g.muted && +g.muted[S.user.uid]) || 0;
+const isMutedG = g => mutedUntil(g) > Date.now();
+const EMO = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 const chatRef = () => doc(db, "chats", S.chat.id);
 const membersOf = () => [S.user.uid, S.chat.peer].sort();
 async function sendTo(c, payload) {
@@ -1064,7 +1127,8 @@ async function sendTo(c, payload) {
   if (c.type === "group" || c.type === "channel") {
     const g = (S.chat && S.chat.id === c.id && S.chat.group) || S.groups.find(x => x.id === c.id);
     if (!isGMember(g) || ((g.kind === "channel" || g.sendAdmins) && !isGAdmin(g))) { toast("مش مسموحلك تبعت هنا"); throw new Error("blocked"); }
-    const prev = payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
+    if (isMutedG(g)) { toast("إنت مكتوم لحد " + new Date(mutedUntil(g)).toLocaleString("ar-EG")); throw new Error("blocked"); }
+    const prev = payload.poll ? "📊 " + payload.poll.q : payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
     const wr = addDoc(collection(db, "groups", c.id, "messages"), { uid: S.user.uid, at: serverTimestamp(), ...payload });
     updateDoc(doc(db, "groups", c.id), { lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, lastName: (S.me.name || "").slice(0, 40) }).catch(e => console.error(e));
     pushNotify("g:" + c.id, prev);
@@ -1076,7 +1140,7 @@ async function sendTo(c, payload) {
   if (ttl) data.exp = Date.now() + ttl * 1000;
   const wr = addDoc(collection(db, "chats", c.id, "messages"), data);
   if (c.peer) {
-    const prev = payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
+    const prev = payload.poll ? "📊 " + payload.poll.q : payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
     if (S.chat && S.chat.id === c.id) S.chat.sentTyping = 0;
     setDoc(doc(db, "chats", c.id), { members: [S.user.uid, c.peer].sort(), lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, typing: { [S.user.uid]: 0 } }, { merge: true }).catch(e => console.error(e));
     pushNotify(c.id, prev);
@@ -1129,10 +1193,11 @@ $("#fileCam").onchange = e => { sendImage(e.target.files[0]); e.target.value = "
 $("#attachBtn").onclick = () => {
   if (!S.chat || $("#input").disabled) return;
   const sh = openModal(`<div class="menu"><div class="menu-h">إرفاق</div>
-    <button class="mrow" data-a="img"><span>صورة من المعرض</span></button><button class="mrow" data-a="cam"><span>الكاميرا</span></button><button class="mrow" data-a="loc"><span>موقعي الحالي</span></button></div>`);
+    <button class="mrow" data-a="img"><span>صورة من المعرض</span></button><button class="mrow" data-a="cam"><span>الكاميرا</span></button><button class="mrow" data-a="loc"><span>موقعي الحالي</span></button><button class="mrow" data-a="poll"><span>استفتاء</span></button></div>`);
   sh.querySelector(".menu").onclick = e => {
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
-    if (a === "img") $("#fileImg").click();
+    if (a === "poll") openPollMaker();
+    else if (a === "img") $("#fileImg").click();
     else if (a === "cam") $("#fileCam").click();
     else if (a === "loc") {
       if (!navigator.geolocation) return toast("المتصفح مش بيدعم المواقع");
@@ -1148,7 +1213,9 @@ const isGAdmin = g => !!g && isGMember(g) && (g.owner === S.user.uid || (g.admin
 const gCount = g => (g.members || []).length + (g.kind === "channel" ? " متابع" : " عضو");
 const gAvatar = (g, cls = "") => `<div class="avatar ${g.kind === "channel" ? "chan" : "grp"} ${cls}">${g.photo && String(g.photo).startsWith("data:image/") ? `<img src="${esc(g.photo)}" alt="">` : esc((g.name || "?").trim().charAt(0).toUpperCase())}</div>`;
 const CHAN_IC = `<svg class="mini-ic" width="14" height="14" viewBox="0 0 24 24" aria-label="قناة"><path d="M3 10v4l11 5V5L3 10zm13-1.5v7a3.5 3.5 0 0 0 0-7zM5 15l1 5h3l-1-4" fill="currentColor"/></svg>`;
-const inviteLink = g => g.kind === "channel" && g.handle ? `${location.origin}${location.pathname}?c=${g.handle}` : `${location.origin}${location.pathname}?g=${g.id}`;
+const inviteLink = g => g.kind === "channel" && g.handle && g.public ? `${location.origin}${location.pathname}?c=${g.handle}` : `${location.origin}${location.pathname}?g=${g.id}${g._k ? "&k=" + g._k : ""}`;
+const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), x => x.toString(16).padStart(2, "0")).join("");
+const invKey = gid => { try { const [g, k] = String(sessionStorage.es_k || "").split("."); return g === gid ? k : ""; } catch { return ""; } };
 const copyText = (t, ok) => (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast(ok), () => toast(t));
 function closeChatSubs() { ["msgs", "peerDoc", "chatDoc", "gdoc"].forEach(k => { if (S.unsub[k]) { S.unsub[k](); delete S.unsub[k]; } }); }
 
@@ -1183,13 +1250,35 @@ function openJoin(g) {
   const b = sh.querySelector("#jGo"); if (b) b.onclick = async () => { b.disabled = true; if (await joinGroup(g)) { closeModal(); openGroup(g.id); } else b.disabled = false; };
 }
 async function joinGroup(g) {
+  if ((g.banned || []).includes(S.user.uid)) { toast("مش مسموحلك تنضم هنا"); return false; }
+  const me = S.user.uid, key = invKey(g.id), b = writeBatch(db);
+  if (key) b.set(doc(db, "groups", g.id, "invites", me), { k: key });
   if (g.approve && g.kind === "group") {
-    try { await setDoc(doc(db, "groups", g.id, "requests", S.user.uid), { at: serverTimestamp(), name: (S.me.name || "").slice(0, 40) }); toast("اتبعت طلب الانضمام. مستني موافقة المشرف"); }
-    catch { toast("تعذّر إرسال الطلب"); }
+    b.set(doc(db, "groups", g.id, "requests", me), { at: serverTimestamp(), name: (S.me.name || "").slice(0, 40) });
+    try { await b.commit(); toast("اتبعت طلب الانضمام. مستني موافقة المشرف"); }
+    catch {
+      let pend = false; try { pend = (await getDoc(doc(db, "groups", g.id, "requests", me))).exists(); } catch {}
+      toast(pend ? "طلبك لسه مستني موافقة المشرف" : "تعذّر إرسال الطلب (ممكن الرابط قديم. اطلب رابط جديد)");
+    }
     return false;
   }
-  try { await updateDoc(doc(db, "groups", g.id), { members: arrayUnion(S.user.uid) }); toast(g.kind === "channel" ? "بقيت متابع للقناة" : "اتضمّيت للمجموعة"); return true; }
-  catch (e) { console.error(e); toast("تعذّر الانضمام (ممكن الرابط اتقفل أو العدد اكتمل)"); return false; }
+  b.update(doc(db, "groups", g.id), { members: arrayUnion(me) });
+  try { await b.commit(); toast(g.kind === "channel" ? "بقيت متابع للقناة" : "اتضمّيت للمجموعة"); return true; }
+  catch (e) { console.error(e); toast("تعذّر الانضمام (ممكن الرابط اتقفل أو اتغيّر أو العدد اكتمل). اطلب رابط جديد من مشرف."); return false; }
+}
+async function acceptAdminInvite(str) {
+  const [gid, tok] = String(str).split(".");
+  if (!gid || !tok) return toast("رابط دعوة المشرف مش صحيح");
+  try {
+    let g = await fetchGroup(gid); if (!g) return toast("المجموعة مش موجودة");
+    if (isGAdmin(g)) return toast("إنت مشرف بالفعل");
+    if (!isGMember(g)) { if (!(await joinGroup(g))) return; g = await fetchGroup(gid); }
+    const b = writeBatch(db), me = S.user.uid;
+    b.set(doc(db, "groups", gid, "adminAccepts", me), { t: tok });
+    b.update(doc(db, "groups", gid), { admins: arrayUnion(me) });
+    b.delete(doc(db, "groups", gid, "adminInvites", tok));
+    await b.commit(); toast("بقيت مشرف 🎉"); openGroup(gid);
+  } catch (e) { console.error(e); toast("الدعوة دي اتستخدمت أو اتلغت أو مش صحيحة"); }
 }
 async function leaveGroup(g) {
   const me = S.user.uid, mem = g.members || [];
@@ -1274,6 +1363,7 @@ function openCreate(kind) {
       const gid = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : Math.random().toString(36).slice(2) + Date.now().toString(36)).slice(0, 20);
       const b = writeBatch(db);
       b.set(doc(db, "groups", gid), { kind, name, desc: q("#cD").value.trim(), photo, owner: S.user.uid, admins: [S.user.uid], members: [S.user.uid, ...members.map(m => m.uid)], public: isCh && pub, joinOpen: true, handle, createdAt: serverTimestamp() });
+      b.set(doc(db, "groups", gid, "secret", "invite"), { key: newKey() });
       if (handle) b.set(doc(db, "handles", handle), { gid, owner: S.user.uid });
       await b.commit(); closeModal(); toast(isCh ? "اتعملت القناة" : "اتعملت المجموعة"); openGroup(gid);
     } catch (e) { console.error(e); err.textContent = "تعذّر الإنشاء (" + (e.code || e.message) + ")"; q("#cGo").disabled = false; }
@@ -1287,24 +1377,43 @@ async function openGroupInfo(gid) {
   const ids = ch ? (g.admins || []) : (g.members || []).slice(0, 100);
   let reqs = [];
   if (admin && !ch && g.approve) { try { reqs = (await getDocs(collection(db, "groups", gid, "requests"))).docs.map(d => d.id); } catch {} }
-  await ensureUsers([...ids, ...reqs]);
+  g._k = ""; if (member) { try { const sk = await getDoc(doc(db, "groups", gid, "secret", "invite")); g._k = sk.exists() ? sk.data().key : ""; } catch {} }
+  const bans = admin ? (g.banned || []).slice(0, 50) : [];
+  await ensureUsers([...ids, ...reqs, ...bans]);
   const reqHtml = reqs.length ? `<div class="panel-h">طلبات الانضمام (${reqs.length})</div>` + reqs.map(id => { const u = S.users.get(id) || { name: "مستخدم" }; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div><div class="end"><button class="btn-mini" data-ok="${esc(id)}">قبول</button><button class="btn-danger sm" data-no="${esc(id)}">رفض</button></div></div>`; }).join("") : "";
+  const banHtml = bans.length ? `<div class="panel-h">الممنوعين (${bans.length})</div>` + bans.map(id => { const u = S.users.get(id) || { name: "مستخدم" }; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div><div class="end"><button class="btn-mini ghost" data-unban="${esc(id)}">رفع المنع</button></div></div>`; }).join("") : "";
   const role = id => id === g.owner ? "المالك" : (g.admins || []).includes(id) ? "مشرف" : "";
   const rows = ids.map(id => { const u = S.users.get(id) || { name: "مستخدم" }, r = role(id);
     const canRm = admin && id !== g.owner && id !== me && (owner || !(g.admins || []).includes(id));
     return `<div class="row-item" data-u="${esc(id)}">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}${badge(u, 14)}${r ? ` <span class="chip sm ${r === "المالك" ? "owner" : ""}">${r}</span>` : ""}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div>
-      <div class="end">${owner && id !== me ? `<button class="btn-mini ghost" data-pro="${esc(id)}">${(g.admins || []).includes(id) ? "إلغاء الإشراف" : "ترقية"}</button>` : ""}${canRm ? `<button class="btn-danger sm" data-rm="${esc(id)}">إزالة</button>` : ""}</div></div>`; }).join("");
+      <div class="end">${owner && id !== me ? `<button class="btn-mini ghost" data-pro="${esc(id)}">${(g.admins || []).includes(id) ? "إلغاء الإشراف" : "ترقية"}</button>` : ""}${admin && !ch && canRm && !(g.admins || []).includes(id) ? `<button class="btn-mini ghost" data-mu="${esc(id)}">${g.muted && +g.muted[id] > Date.now() ? "إلغاء الكتم" : "كتم"}</button>` : ""}${canRm ? `<button class="btn-danger sm" data-rm="${esc(id)}">إزالة</button>` : ""}</div></div>`; }).join("");
   const sh = openModal(`<div class="prof">${gAvatar(g, "big")}<h3>${esc(g.name)}</h3>
       <div class="chips"><span class="chip">${ch ? "قناة" : "مجموعة"}</span><span class="chip">${gCount(g)}</span>${g.handle ? `<span class="chip"><bdi>#${esc(g.handle)}</bdi></span>` : ""}</div>
       ${g.desc ? `<div class="bio">${esc(g.desc)}</div>` : ""}
-      <div class="actions">${g.joinOpen ? `<button class="btn-ghost" id="giLink">نسخ رابط الدعوة</button>` : ""}${admin ? `<button class="btn-primary" id="giEdit">تعديل</button>` : ""}</div></div>
-    ${admin ? `<div class="panel-h">الإعدادات</div>${switchRow("giOpen", !!g.joinOpen, "رابط الدعوة شغال", "لو اتقفل محدش يقدر ينضم بالرابط")}${ch ? switchRow("giPub", !!g.public, "قناة عامة", "تظهر في استكشاف القنوات") : switchRow("giSend", !!g.sendAdmins, "الإرسال للمشرفين فقط", "باقي الأعضاء بيقروا بس") + switchRow("giApr", !!g.approve, "الموافقة على الأعضاء الجدد", "اللي ينضم بالرابط لازم مشرف يوافق عليه")}
-      <div class="field" style="margin-top:14px"><label for="giAdd">إضافة ${ch ? "متابع" : "عضو"} باليوزر</label><div class="inline-add"><input type="text" id="giAdd" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-mini" id="giAddBtn">إضافة</button></div><div class="hint" id="giH"></div></div>` : ""}
-    ${reqHtml}
-    <div class="panel-h">${ch ? "المشرفين" : "الأعضاء"}</div><div id="giList">${rows}</div>${ch ? `<div class="hint">${gCount(g)} · قايمة المتابعين مخفية للخصوصية (حتى عن المشرفين)</div>` : (g.members || []).length > 100 ? `<div class="hint">عرض أول 100 فقط</div>` : ""}
+      <div class="actions">${g.joinOpen ? `<button class="btn-ghost" id="giLink">نسخ رابط الدعوة</button>` : ""}${admin && !(ch && g.public) ? `<button class="btn-ghost" id="giReset">إعادة تعيين الرابط</button>` : ""}${owner ? `<button class="btn-ghost" id="giAi">رابط دعوة مشرف</button><button class="btn-ghost" id="giAiX">إلغاء روابط المشرفين</button>` : ""}${admin ? `<button class="btn-primary" id="giEdit">تعديل</button>` : ""}</div></div>
+    ${admin ? `<div class="panel-h">الإعدادات</div>${switchRow("giOpen", !!g.joinOpen, "رابط الدعوة شغال", "لو اتقفل محدش يقدر ينضم بالرابط")}${switchRow("giRe", !g.noReact, "التفاعل بالإيموجي", "الأعضاء يقدروا يتفاعلوا على الرسايل")}${ch ? switchRow("giPub", !!g.public, "قناة عامة", "تظهر في استكشاف القنوات") : switchRow("giSend", !!g.sendAdmins, "الإرسال للمشرفين فقط", "باقي الأعضاء بيقروا بس") + switchRow("giApr", !!g.approve, "الموافقة على الأعضاء الجدد", "اللي ينضم بالرابط لازم مشرف يوافق عليه")}
+      <div class="field" style="margin-top:14px"><label for="giAdd">إضافة ${ch ? "متابع" : "عضو"} باليوزر</label><div class="inline-add"><input type="text" id="giAdd" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-mini" id="giAddBtn">إضافة</button></div><div class="hint" id="giH"></div></div>${ch ? `<div class="field" style="margin-top:14px"><label for="giRm">إزالة متابع باليوزر</label><div class="inline-add"><input type="text" id="giRm" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-danger sm" id="giRmBtn">إزالة</button></div><div class="hint" id="giRmH">القايمة مخفية، فالإزالة بتتم باليوزر. وتقدر تمنعه من الرجوع بالرابط.</div></div>${owner ? `<div class="field" style="margin-top:14px"><label for="giPr">ترقية مشرف باليوزر</label><div class="inline-add"><input type="text" id="giPr" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-mini" id="giPrBtn">ترقية</button></div><div class="hint" id="giPrH">لازم يكون متابع. أقصى عدد مشرفين 15.</div></div>` : ""}` : ""}` : ""}
+    ${reqHtml}${banHtml}
+    <div class="panel-h">${ch ? "المشرفين" : "الأعضاء"}</div>${!ch && ids.length > 8 ? `<div class="field"><input type="text" id="giFind" placeholder="بحث في الأعضاء..." autocomplete="off"></div>` : ""}<div id="giList">${rows}</div>${ch ? `<div class="hint">${gCount(g)} · قايمة المتابعين مخفية للخصوصية (حتى عن المشرفين)</div>` : (g.members || []).length > 100 ? `<div class="hint">عرض أول 100 فقط</div>` : ""}
     <div class="actions" style="margin-top:20px">${member && (!owner || (g.members || []).length > 1) ? `<button class="btn-danger" id="giLeave">${owner ? "الخروج ونقل الملكية" : ch ? "إلغاء المتابعة" : "الخروج من المجموعة"}</button>` : ""}${owner ? `<button class="btn-danger" id="giDel">حذف ${ch ? "القناة" : "المجموعة"}</button>` : ""}</div>`, true);
   const q = id => sh.querySelector(id), up = patch => updateDoc(doc(db, "groups", gid), patch).then(() => openGroupInfo(gid)).catch(() => toast("تعذّر الحفظ"));
   const l = q("#giLink"); if (l) l.onclick = () => copyText(inviteLink(g), "اتنسخ رابط الدعوة");
+  const rs = q("#giReset"); if (rs) rs.onclick = async () => {
+    if (!confirm("الرابط القديم هيبطّل يشتغل لأي حد جديد. تكمل؟")) return;
+    const k = newKey();
+    try { await setDoc(doc(db, "groups", gid, "secret", "invite"), { key: k }); g._k = k; copyText(inviteLink(g), "اتغيّر الرابط واتنسخ الجديد"); }
+    catch { toast("تعذّر تغيير الرابط"); }
+  };
+  const ai = q("#giAi"); if (ai) ai.onclick = async () => {
+    const t = newKey() + newKey().slice(0, 8);
+    try { await setDoc(doc(db, "groups", gid, "adminInvites", t), { at: serverTimestamp() }); copyText(`${location.origin}${location.pathname}?ai=${gid}.${t}`, "اتنسخ رابط دعوة المشرف. بيشتغل مرة واحدة"); }
+    catch { toast("تعذّر إنشاء الرابط"); }
+  };
+  const aix = q("#giAiX"); if (aix) aix.onclick = async () => {
+    if (!confirm("تلغي كل روابط دعوة المشرفين اللي لسه ما اتستخدمتش؟")) return;
+    try { const s = await getDocs(collection(db, "groups", gid, "adminInvites")); const b = writeBatch(db); s.docs.forEach(d => b.delete(d.ref)); await b.commit(); toast("اتلغت (" + s.size + ")"); }
+    catch { toast("تعذّر الإلغاء"); }
+  };
   const ed = q("#giEdit"); if (ed) ed.onclick = () => openEditGroup(g);
   const o = q("#giOpen"); if (o) o.onchange = e => up({ joinOpen: e.target.checked });
   const ap = q("#giApr"); if (ap) ap.onchange = e => up({ approve: e.target.checked });
@@ -1313,6 +1422,7 @@ async function openGroupInfo(gid) {
     try { if (b.dataset.ok) await updateDoc(doc(db, "groups", gid), { members: arrayUnion(id) }); await deleteDoc(doc(db, "groups", gid, "requests", id)); toast(b.dataset.ok ? "اتقبل" : "اترفض"); openGroupInfo(gid); }
     catch { toast("تعذّر التنفيذ (ممكن العدد اكتمل)"); }
   });
+  const rr = q("#giRe"); if (rr) rr.onchange = e => up({ noReact: !e.target.checked });
   const sb = q("#giSend"); if (sb) sb.onchange = e => up({ sendAdmins: e.target.checked });
   const pb = q("#giPub"); if (pb) pb.onchange = e => up({ public: e.target.checked });
   const ab = q("#giAddBtn"); if (ab) ab.onclick = async () => {
@@ -1321,13 +1431,50 @@ async function openGroupInfo(gid) {
     try {
       const s = await getDoc(doc(db, "usernames", name)); if (!s.exists()) { h.className = "hint err"; h.textContent = "مفيش حد بالاسم ده"; return; }
       const uid = s.data().uid; if ((g.members || []).includes(uid)) { h.textContent = "موجود بالفعل"; return; }
+      if ((g.banned || []).includes(uid)) { h.className = "hint err"; h.textContent = "الشخص ده ممنوع. ارفع المنع الأول."; return; }
+      const tu = await getUser(uid); if (tu && tu.noAdd === true) { h.className = "hint err"; h.textContent = "الشخص ده مانع إضافته للمجموعات. ابعتله رابط الدعوة."; return; }
       await updateDoc(doc(db, "groups", gid), { members: arrayUnion(uid) }); toast("اتضاف"); openGroupInfo(gid);
     } catch { h.className = "hint err"; h.textContent = "تعذّرت الإضافة (ممكن العدد اكتمل)"; }
   };
+  const rb = q("#giRmBtn"); if (rb) rb.onclick = async () => {
+    const name = q("#giRm").value.trim().toLowerCase().replace(/^@/, ""), h = q("#giRmH"); h.className = "hint";
+    if (!/^[a-z0-9_]{3,20}$/.test(name)) { h.className = "hint err"; h.textContent = "اكتب اليوزر صح"; return; }
+    try {
+      const s = await getDoc(doc(db, "usernames", name)); if (!s.exists()) { h.className = "hint err"; h.textContent = "مفيش حد بالاسم ده"; return; }
+      const uid = s.data().uid;
+      if (uid === g.owner || (!owner && (g.admins || []).includes(uid))) { h.className = "hint err"; h.textContent = "مينفعش تشيل مشرف"; return; }
+      if (!(g.members || []).includes(uid)) { h.className = "hint err"; h.textContent = "مش متابع للقناة"; return; }
+      if (!confirm("تشيل @" + name + " من القناة؟")) return;
+      const bn = confirm("تمنعه كمان من الرجوع بالرابط؟ (OK = منع، Cancel = إزالة بس)");
+      await updateDoc(doc(db, "groups", gid), { members: arrayRemove(uid), admins: arrayRemove(uid), ...(bn ? { banned: arrayUnion(uid) } : {}) }); toast("اتشال"); openGroupInfo(gid);
+    } catch { h.className = "hint err"; h.textContent = "تعذّرت الإزالة"; }
+  };
+  sh.querySelectorAll("[data-unban]").forEach(b => b.onclick = () => up({ banned: arrayRemove(b.dataset.unban) }));
+  const fd = q("#giFind"); if (fd) fd.oninput = () => { const t = fd.value.trim().toLowerCase(); sh.querySelectorAll("#giList .row-item").forEach(r => { r.style.display = !t || r.textContent.toLowerCase().includes(t) ? "" : "none"; }); };
+  const pb2 = q("#giPrBtn"); if (pb2) pb2.onclick = async () => {
+    const name = q("#giPr").value.trim().toLowerCase().replace(/^@/, ""), h = q("#giPrH"); h.className = "hint";
+    if (!/^[a-z0-9_]{3,20}$/.test(name)) { h.className = "hint err"; h.textContent = "اكتب اليوزر صح"; return; }
+    try {
+      const s = await getDoc(doc(db, "usernames", name)); if (!s.exists()) { h.className = "hint err"; h.textContent = "مفيش حد بالاسم ده"; return; }
+      const uid = s.data().uid;
+      if ((g.admins || []).includes(uid)) { h.textContent = "هو مشرف بالفعل"; return; }
+      if (!(g.members || []).includes(uid)) { h.className = "hint err"; h.textContent = "مش متابع للقناة"; return; }
+      if ((g.admins || []).length >= 15) { h.className = "hint err"; h.textContent = "وصلت لأقصى عدد مشرفين (15)"; return; }
+      await updateDoc(doc(db, "groups", gid), { admins: arrayUnion(uid) }); toast("اترقّى"); openGroupInfo(gid);
+    } catch { h.className = "hint err"; h.textContent = "تعذّرت الترقية"; }
+  };
   const list = q("#giList");
   list.onclick = async e => {
-    const rm = e.target.closest("[data-rm]"), pro = e.target.closest("[data-pro]");
-    if (rm) { if (!confirm("تشيله؟")) return; up({ members: arrayRemove(rm.dataset.rm), admins: arrayRemove(rm.dataset.rm) }); }
+    const rm = e.target.closest("[data-rm]"), pro = e.target.closest("[data-pro]"), mu = e.target.closest("[data-mu]");
+    if (mu) {
+      const id = mu.dataset.mu, f = "muted." + id;
+      if (g.muted && +g.muted[id] > Date.now()) return up({ [f]: deleteField() });
+      const opts = [[86400000, "24 ساعة"], [604800000, "7 أيام"]];
+      const m2 = openModal(`<div class="menu"><div class="menu-h">كتم ${esc((S.users.get(id) || {}).name || "العضو")}</div><p class="sub" style="margin:0 4px 8px">مش هيقدر يبعت رسايل للمدة دي.</p>${opts.map(([ms, t]) => `<button class="mrow" data-ms="${ms}"><span>${t}</span></button>`).join("")}</div>`);
+      m2.querySelector(".menu").onclick = async ev => { const b = ev.target.closest("[data-ms]"); if (!b) return; try { await updateDoc(doc(db, "groups", gid), { [f]: Date.now() + +b.dataset.ms }); toast("اتكتم"); } catch { toast("تعذّر الكتم"); } openGroupInfo(gid); };
+      return;
+    }
+    if (rm) { if (!confirm("تشيله؟")) return; const bn = confirm("تمنعه كمان من الرجوع بالرابط؟ (OK = منع، Cancel = إزالة بس)"); up({ members: arrayRemove(rm.dataset.rm), admins: arrayRemove(rm.dataset.rm), ...(bn ? { banned: arrayUnion(rm.dataset.rm) } : {}) }); }
     else if (pro) { const id = pro.dataset.pro; up({ admins: (g.admins || []).includes(id) ? arrayRemove(id) : arrayUnion(id) }); }
     else { const r = e.target.closest("[data-u]"); if (r) openProfile(r.dataset.u); }
   };

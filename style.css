@@ -285,3 +285,19 @@ img{-webkit-user-drag:none;user-drag:none}
 .pin-bar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel2);border-bottom:1px solid var(--line);cursor:pointer;flex:0 0 auto}
 .pin-bar div{min-width:0;display:flex;flex-direction:column}.pin-bar b{font-size:12px;color:var(--ice)}.pin-bar span:not(.pin-i){font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 :root[data-fs=s] .msg .txt{font-size:13px}:root[data-fs=l] .msg .txt{font-size:17.5px;line-height:1.7}
+
+/* ---------- v8: تفاعلات + فلاتر ---------- */
+.emo-row{display:flex;justify-content:space-around;gap:4px;padding:6px 4px 10px}
+.emo{border:0;background:color-mix(in srgb,var(--ink) 60%,transparent);border-radius:50%;width:44px;height:44px;font-size:22px;cursor:pointer}
+.emo:active{transform:scale(.9)}
+.reacts{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.re{border:1px solid color-mix(in srgb,var(--ice) 25%,transparent);background:color-mix(in srgb,var(--ink) 55%,transparent);color:inherit;border-radius:12px;padding:1px 8px;font-size:13px;cursor:pointer;display:inline-flex;gap:4px;align-items:center}
+.re b{font-size:11px;font-weight:600}.re.mine{border-color:var(--ice);background:color-mix(in srgb,var(--ice) 22%,transparent)}
+.seg3.four{grid-template-columns:repeat(4,1fr);margin:6px 0 10px}
+
+/* ---------- v9: استفتاءات ---------- */
+.poll{min-width:220px;max-width:100%}.poll .pq{font-weight:700;margin-bottom:8px;white-space:pre-wrap}
+.po{position:relative;display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;margin:4px 0;padding:8px 10px;border:1px solid color-mix(in srgb,var(--ice) 25%,transparent);border-radius:10px;background:color-mix(in srgb,var(--ink) 55%,transparent);color:inherit;overflow:hidden;text-align:start;cursor:pointer}
+.po .pb{position:absolute;inset-block:0;inset-inline-start:0;background:color-mix(in srgb,var(--ice) 26%,transparent);transition:width .25s;pointer-events:none}
+.po .pt,.po b{position:relative}.po.mine{border-color:var(--ice)}
+.poll .pn{font-size:11px;color:#8da0d4;margin-top:4px}
