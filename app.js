@@ -1061,7 +1061,7 @@ function openMsgMenu(mid) {
     else if (a === "del") {
       if (!confirm(c.type === "dm" ? "تحذف الرسالة عند الطرفين؟" : "تحذف الرسالة للجميع؟")) return;
       const ref = doc(db, ...msgBase(c), mid);
-      ((c.type === "dm" ? updateDoc(ref, { deleted: true }) : (isG && mine) ? updateDoc(ref, { deleted: true, text: "", img: deleteField(), loc: deleteField(), reply: deleteField() }) : deleteDoc(ref)).catch(() => toast("مقدرتش أحذف الرسالة"));
+            (c.type === "dm" ? updateDoc(ref, { deleted: true }) : (isG && mine) ? updateDoc(ref, { deleted: true, text: "", img: deleteField(), loc: deleteField(), reply: deleteField() }) : deleteDoc(ref)).catch(() => toast("مقدرتش أحذف الرسالة"));
     }
   };
 }
