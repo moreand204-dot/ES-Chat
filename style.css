@@ -48,7 +48,7 @@ button{cursor:pointer}
 
 /* ---------- app shell ---------- */
 .app{height:100dvh;width:min(1500px,100%);margin:auto;display:flex;position:relative;
-  background:var(--deep);box-shadow:0 0 0 1px var(--glow),0 0 60px color-mix(in srgb,var(--glow) 33%,transparent)}
+  background:var(--deep);box-shadow:0 0 0 1px var(--line)}
 .sidebar{width:370px;flex:0 0 370px;background:var(--panel);border-inline-end:1px solid var(--line);display:flex;flex-direction:column;z-index:3}
 .top{height:76px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);flex:0 0 auto}
 .brand{display:flex;align-items:center;gap:12px;min-width:0}
@@ -76,7 +76,7 @@ button{cursor:pointer}
 
 /* ---------- chat ---------- */
 .main{min-width:0;flex:1;display:flex;flex-direction:column;background:radial-gradient(circle at 50% 0,color-mix(in srgb,var(--halo) 27%,transparent) 0,transparent 40%),var(--deep)}
-.chatbar{height:76px;flex:0 0 76px;padding:10px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;background:#050d2bd9;backdrop-filter:blur(14px)}
+.chatbar{height:76px;flex:0 0 76px;padding:10px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;background:#050d2b}
 .back{display:none;width:38px;height:38px;border:0;background:transparent;color:var(--text);padding:0;place-items:center}
 .chat-head{display:flex;align-items:center;gap:12px;min-width:0;cursor:pointer;flex:1}
 .chat-head .t{min-width:0}.chat-head b{font-size:15px;display:flex;align-items:center;gap:5px}.chat-head small{display:block;color:var(--muted);font-size:12px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -87,7 +87,7 @@ button{cursor:pointer}
 .msg{max-width:min(70%,540px);padding:9px 13px;border:1px solid var(--line);border-radius:17px;line-height:1.6;font-size:14px;position:relative;word-break:break-word}
 .msg .txt{white-space:pre-wrap}
 .msg.them{align-self:flex-start;background:var(--them);border-end-start-radius:5px}
-.msg.me{align-self:flex-end;background:var(--mine);border-color:var(--mine-line);border-end-end-radius:5px;box-shadow:0 0 18px color-mix(in srgb,var(--glow) 18%,transparent)}
+.msg.me{align-self:flex-end;background:var(--mine);border-color:var(--mine-line);border-end-end-radius:5px}
 .msg .who{font-size:12px;font-weight:600;color:var(--ice);margin-bottom:3px;cursor:pointer;display:flex;align-items:center;gap:4px;white-space:normal}
 .msg .tm{font-size:10px;color:#8da0d4;margin-top:3px;display:flex;gap:10px;align-items:center;justify-content:flex-end}
 .msg .del{border:0;background:none;color:#8da0d4;padding:0;font-size:11px;opacity:.7}
@@ -102,7 +102,7 @@ button{cursor:pointer}
 .send svg{transform:scaleX(-1)}
 
 /* ---------- modal ---------- */
-.modal{position:fixed;inset:0;z-index:50;background:#010412cc;backdrop-filter:blur(6px);display:grid;place-items:center;padding:16px}
+.modal{position:fixed;inset:0;z-index:50;background:#010412e6;display:grid;place-items:center;padding:16px}
 .sheet{width:min(460px,100%);max-height:92dvh;overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:24px 20px;box-shadow:0 0 60px color-mix(in srgb,var(--glow) 20%,transparent);position:relative}
 .sheet.wide{width:min(900px,100%)}
 .x{position:absolute;top:14px;inset-inline-start:14px;width:36px;height:36px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);display:grid;place-items:center;padding:0;color:var(--ice);font-size:18px}
@@ -324,7 +324,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{-webkit-font-smoothing:antialiased;line-height:1.5}
 .list,.messages,.sheet,.screen.scroll{overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#1a2c70 transparent}
 .msg .txt{text-wrap:pretty;overflow-wrap:anywhere}
-.msg{box-shadow:0 1px 0 #0000001f}
+.msg{contain:layout style}
 .chat-item{transition:background .15s,border-color .15s}
 .chat-item:active{background:#0d1d54}
 .icon,.send,.btn-primary,.btn-ghost,.btn-danger{transition:transform .12s,box-shadow .15s,border-color .15s}
@@ -338,3 +338,27 @@ body{-webkit-font-smoothing:antialiased;line-height:1.5}
   .chatbar{height:calc(68px + env(safe-area-inset-top,0px));flex-basis:calc(68px + env(safe-area-inset-top,0px))}
   .lcard{width:100%}
 }
+
+
+/* ---------- v26: أداء + إعدادات جديدة ---------- */
+.list .chat-item{contain:layout style}
+.messages{will-change:scroll-position}
+:root[data-motion="off"] *{animation:none!important;transition:none!important}
+:root[data-motion="off"] .sidebar,:root[data-motion="off"] .main{transition:none!important}
+:root[data-dens="c"] .messages{gap:4px;padding-top:14px;padding-bottom:14px}
+:root[data-dens="c"] .msg{padding:6px 11px;line-height:1.45;border-radius:14px}
+:root[data-dens="c"] .chat-item{padding:7px 10px}
+:root[data-dens="c"] .avatar{width:42px;height:42px;flex-basis:42px}
+.field input[type=time]{background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:9px 12px;outline:0;color-scheme:dark}
+.qrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:-4px}
+.qrow label{margin:0!important}
+.fl{display:flex;gap:6px;overflow-x:auto;margin:0 0 8px;padding-bottom:4px;scrollbar-width:none}
+.fl::-webkit-scrollbar{display:none}
+.fl button{height:34px;padding:0 13px;border-radius:20px;border:1px solid var(--line);background:var(--ink);color:var(--muted);white-space:nowrap;font-size:12.5px}
+.fl button.on{background:#0e2270;color:var(--text);border-color:var(--blue)}
+.rep{background:var(--ink);border:1px solid var(--line);border-radius:16px;padding:12px;margin-bottom:10px}
+.rep .rh{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.rep .rh small{color:var(--muted)}
+.rep .rt{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 11px;font-size:13px;line-height:1.7;margin-bottom:6px;white-space:pre-wrap;overflow-wrap:anywhere}
+.rep small{color:var(--muted);font-size:12px}
+.row-item .btn-danger{height:34px;padding:0 12px;font-size:12px;flex:0 0 auto}
