@@ -71,7 +71,7 @@ button{cursor:pointer}
 .chat-meta{min-width:0;flex:1}
 .name{font-weight:600;font-size:14px;display:flex;align-items:center;gap:5px}
 .preview{color:var(--muted);font-size:12px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.vbadge{display:inline-block;vertical-align:middle;flex:0 0 auto}
+.vbadge-wrap{display:inline-flex;vertical-align:middle;align-items:center;margin-inline-start:4px;filter:drop-shadow(0 1px 3px rgba(24,119,242,.45));cursor:help}.vbadge{display:block;flex:0 0 auto}
 .empty-list{padding:30px 16px;text-align:center;color:var(--muted);font-size:13px}
 
 /* ---------- chat ---------- */
@@ -301,3 +301,7 @@ img{-webkit-user-drag:none;user-drag:none}
 .po .pb{position:absolute;inset-block:0;inset-inline-start:0;background:color-mix(in srgb,var(--ice) 26%,transparent);transition:width .25s;pointer-events:none}
 .po .pt,.po b{position:relative}.po.mine{border-color:var(--ice)}
 .poll .pn{font-size:11px;color:#8da0d4;margin-top:4px}
+
+.pin-bar{display:flex;gap:6px;overflow:auto;padding:7px 12px;border-bottom:1px solid var(--line);background:#07143bd9}.pin-item{display:flex;align-items:center;gap:7px;min-width:0;flex:1;text-align:start;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:11px;padding:7px 9px}.pin-item span:last-child{min-width:0}.pin-item b,.pin-item small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pin-item small{color:var(--muted);font-size:11px;margin-top:2px}.pin-i{font-size:15px}
+.stats-tabs{display:flex;gap:7px;overflow:auto;margin:12px 0 16px}.stats-tabs button{height:36px;padding:0 13px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--muted);white-space:nowrap}.stats-tabs button.on{background:#0e2270;color:var(--text);border-color:var(--blue)}
+.mfile{display:flex;align-items:center;gap:8px;color:var(--ice);text-decoration:none;border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:9px 10px}.mfile span{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mfile small{color:var(--muted);margin-inline-start:auto}
