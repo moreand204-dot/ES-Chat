@@ -1,4 +1,4 @@
-// إعدادات Firebase بتاعة مشروع escanor-chat-8178c
+// إعدادات Firebase لمشروع escanor-chat-8178c
 export const firebaseConfig = {
   apiKey: "AIzaSyCts7srrieOCyWb0MBIHfJbZ6Sh5FrUrxQ",
   authDomain: "escanor-chat-8178c.firebaseapp.com",
@@ -10,9 +10,5 @@ export const firebaseConfig = {
   measurementId: "G-WWXT1CY5HM"
 };
 
-// إيميل المالك (لازم يكون نفس الإيميل المكتوب في firestore.rules)
 export const OWNER_EMAIL = "moreand458@gmail.com";
-
-// مفتاح الإشعارات (VAPID): Firebase Console ← Project settings ← Cloud Messaging ← Web Push certificates ← Generate key pair
-// سيبه فاضي لو مش عايز إشعارات والموقع مقفول (الإشعارات وهو مفتوح بتشتغل من غيره).
 export const VAPID_KEY = "BDw61_fYSnEQyDUFQMyJRNDxRtPN4_paW9ozYHZQaxykg3w1kd2m2effEROgrScgDyvR_821BNx-HEOPiFMwn8Y";

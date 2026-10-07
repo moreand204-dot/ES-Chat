@@ -15,7 +15,7 @@
 </head>
 <body>
 
-<div id="boot" class="screen center"><img src="assets/logo-128.png" alt="" class="boot-logo"></div>
+<div id="boot" class="screen center"><img src="assets/logo-128.png" alt="" class="boot-logo"><div id="bootError" class="login-msg" hidden></div></div>
 
 <section id="login" class="screen center hidden">
   <div class="login-card">
@@ -101,6 +101,16 @@
 <div id="toast" class="toast"></div>
 <div id="netBar" class="net-bar hidden">مفيش اتصال بالنت — الرسايل هتتبعت أول ما يرجع</div>
 
+<script>
+  // لو فشل تحميل module (غالبًا ملف firebase-config.js ناقص)، لا تترك المستخدم على الشعار.
+  setTimeout(() => {
+    const b = document.getElementById("boot"), e = document.getElementById("bootError");
+    if (b && !b.classList.contains("hidden") && e) {
+      e.hidden = false;
+      e.textContent = "التطبيق لم يكتمل تحميله. تأكد من رفع firebase-config.js ثم أعد تحميل الصفحة.";
+    }
+  }, 8000);
+</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
