@@ -1,0 +1,7 @@
+docs
+*.log
+*.test.py
+*.test.mjs
+README.md
+firestore.rules
+firebase.json

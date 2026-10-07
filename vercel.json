@@ -1,0 +1,11 @@
+{
+  "functions": { "api/og.js": { "includeFiles": "index.html" } },
+  "rewrites": [
+    { "source": "/", "has": [{ "type": "query", "key": "u" }], "destination": "/api/og" },
+    { "source": "/", "has": [{ "type": "query", "key": "c" }], "destination": "/api/og" },
+    { "source": "/", "has": [{ "type": "query", "key": "g" }], "destination": "/api/og" },
+    { "source": "/index.html", "has": [{ "type": "query", "key": "u" }], "destination": "/api/og" },
+    { "source": "/index.html", "has": [{ "type": "query", "key": "c" }], "destination": "/api/og" },
+    { "source": "/index.html", "has": [{ "type": "query", "key": "g" }], "destination": "/api/og" }
+  ]
+}

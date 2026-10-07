@@ -1,0 +1,5 @@
+*.log
+firebase-debug.log
+firestore-debug.log
+node_modules
+.vercel

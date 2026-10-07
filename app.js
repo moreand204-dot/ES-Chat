@@ -451,7 +451,7 @@ function openSettings() {
   const note = perm === "denied" ? `<div class="hint err">الإشعارات مقفولة للموقع ده من إعدادات المتصفح. افتح إعدادات الموقع وفعّلها.</div>`
     : perm === "unsupported" ? `<div class="hint">المتصفح ده مش بيدعم الإشعارات. على الآيفون ضيف الموقع للشاشة الرئيسية الأول.</div>` : "";
   const sh = openModal(`<div class="prof" style="padding-top:6px">${avatar(me)}<h3>${esc(me.name)}${badge(me, 20)}</h3><div class="un"><bdi>@${esc(me.username || "")}</bdi></div></div>
-    <div class="actions"><button class="btn-primary" id="stEdit">تعديل البروفايل</button><button class="btn-ghost" id="stLink">نسخ رابط بروفايلك</button></div>
+    <div class="actions"><button class="btn-primary" id="stEdit">تعديل البروفايل</button><button class="btn-ghost" id="stLink">مشاركة رابط بروفايلك</button></div>
     <div class="panel-h">الإشعارات</div>${note}
     ${switchRow("stNotif", prefs.notifs && perm === "granted", "إشعارات الرسائل", "تنبيه لما حد يبعتلك")}
     ${switchRow("stSound", prefs.sound, "صوت التنبيه")}
@@ -472,7 +472,7 @@ function openSettings() {
     <div class="actions" style="margin-top:22px"><button class="btn-ghost" id="stOut">تسجيل الخروج</button></div>`);
   const q = id => sh.querySelector(id);
   q("#stEdit").onclick = openEdit; q("#stOut").onclick = doSignOut;
-  q("#stLink").onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(() => toast("اتنسخ الرابط"), () => toast(link));
+  q("#stLink").onclick = () => shareOrCopy(link, me.name || "ES Chat Pro", "اتنسخ الرابط");
   q("#stLbl").onclick = manageLabels; q("#stQr").onclick = manageQuick; q("#stStar").onclick = openStars;
   sh.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { LS.set("accent", b.dataset.acc); applyTheme(); sh.querySelectorAll("[data-acc]").forEach(x => x.classList.toggle("on", x === b)); });
   sh.querySelectorAll("[data-wp]").forEach(b => b.onclick = () => { LS.set("wp", b.dataset.wp); applyTheme(); sh.querySelectorAll("[data-wp]").forEach(x => x.classList.toggle("on", x === b)); });
@@ -898,6 +898,7 @@ function renderMsgsPlain(docs) {
       if (m.file && m.file.data) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="data:${esc(m.file.type || "application/octet-stream")};base64,${esc(m.file.data)}">📎 <span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
       if (m.loc) body += `<a class="mloc" href="https://www.google.com/maps?q=${+m.loc.lat},${+m.loc.lng}" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg><span>موقع على الخريطة</span></a>`;
       if (m.text) body += `<div class="txt">${esc(m.text)}</div>`;
+      if (m.text) body += linkCardHtml(m.text);
       if (m.poll && Array.isArray(m.poll.o)) {
         const vs = m.votes || {}, tot = Object.keys(vs).length, cn = m.poll.o.map(() => 0);
         for (const v of Object.values(vs)) if (cn[v] !== undefined) cn[v]++;
@@ -916,6 +917,7 @@ function renderMsgsPlain(docs) {
       + body + `<div class="tm">${stars.has(c.id + "/" + d.id) ? `<span class="star">★</span>` : ""}<span>${fmtTime(dt)}</span>${tick}</div></div>`;
   }
   box.innerHTML = h;
+  hydrateLinkCards();
   if (near) box.scrollTop = box.scrollHeight;
   c.first = false;
   if (c.peer && lastUid && lastUid !== me && document.visibilityState === "visible") sendRead(lastMs);
@@ -1061,7 +1063,7 @@ function openMsgMenu(mid) {
     else if (a === "del") {
       if (!confirm(c.type === "dm" ? "تحذف الرسالة عند الطرفين؟" : "تحذف الرسالة للجميع؟")) return;
       const ref = doc(db, ...msgBase(c), mid);
-            (c.type === "dm" ? updateDoc(ref, { deleted: true }) : (isG && mine) ? updateDoc(ref, { deleted: true, text: "", img: deleteField(), loc: deleteField(), reply: deleteField() }) : deleteDoc(ref)).catch(() => toast("مقدرتش أحذف الرسالة"));
+      (c.type === "dm" ? updateDoc(ref, { deleted: true }) : (isG && mine) ? updateDoc(ref, { deleted: true, text: "", img: deleteField(), loc: deleteField(), reply: deleteField() }) : deleteDoc(ref)).catch(() => toast("مقدرتش أحذف الرسالة"));
     }
   };
 }
@@ -1340,6 +1342,35 @@ const inviteLink = g => g.kind === "channel" && g.handle && g.public ? `${locati
 const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), x => x.toString(16).padStart(2, "0")).join("");
 const invKey = gid => { try { const [g, k] = String(sessionStorage.es_k || "").split("."); return g === gid ? k : ""; } catch { return ""; } };
 const copyText = (t, ok) => (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast(ok), () => toast(t));
+
+// ---------- كروت الروابط داخل الشات (روابط الموقع بس، بتتبني على جهاز المستقبل) ----------
+function linkCardHtml(text) {
+  const m = String(text || "").match(/https?:\/\/[^\s]+/); if (!m) return "";
+  let u; try { u = new URL(m[0]); } catch { return ""; }
+  if (u.origin !== location.origin) return "";
+  const p = u.searchParams, k = p.get("u") ? "u" : p.get("c") ? "c" : p.get("g") ? "g" : ""; if (!k) return "";
+  return `<a class="lcard" data-k="${k}" data-v="${esc(p.get(k))}" href="${esc(u.pathname + u.search)}"></a>`;
+}
+async function hydrateLinkCards() {
+  for (const el of document.querySelectorAll(".lcard:not([data-done])")) {
+    el.dataset.done = 1;
+    const k = el.dataset.k, v = el.dataset.v; let d = null;
+    try {
+      if (k === "u") {
+        const s = await getDoc(doc(db, "usernames", v));
+        if (s.exists()) { const p = await getDoc(doc(db, "users", s.data().uid, "public", "profile")); if (p.exists()) d = { n: p.data().name, s: p.data().bio || "@" + v, p: p.data().photo, t: "بروفايل" }; }
+      } else if (k === "c") {
+        const h = await getDoc(doc(db, "handles", v));
+        if (h.exists()) { const g = await getDoc(doc(db, "groupDirectory", h.data().gid)); if (g.exists()) d = { n: g.data().name, s: g.data().desc || "قناة", p: g.data().photo, t: "قناة" }; }
+      } else d = { n: "دعوة لمجموعة", s: "اضغط للانضمام", p: "", t: "مجموعة" };
+    } catch {}
+    if (!d) { el.remove(); continue; }
+    const ph = /^(https:\/\/|data:image\/)/.test(d.p || "") ? `<img src="${esc(d.p)}" alt="">` : `<span class="lc-ph">${esc((d.n || "?").slice(0, 1))}</span>`;
+    el.innerHTML = `${ph}<div class="lc-t"><b>${esc(d.n)}</b><small>${esc(d.s)}</small><i>${esc(d.t)}</i></div>`;
+  }
+}
+// مشاركة لأي برنامج لو المتصفح بيدعم، وإلا نسخ
+const shareOrCopy = (url, title, ok) => (navigator.share ? navigator.share({ title, url }).catch(e => { if (e && e.name !== "AbortError") copyText(url, ok); }) : copyText(url, ok));
 function closeChatSubs() { ["msgs", "peerDoc", "chatDoc", "gdoc"].forEach(k => { if (S.unsub[k]) { S.unsub[k](); delete S.unsub[k]; } }); }
 
 async function fetchGroup(gid) {
@@ -1521,7 +1552,7 @@ async function openGroupInfo(gid) {
     <div class="panel-h">${ch ? "المشرفين" : "الأعضاء"}</div>${!ch && ids.length > 8 ? `<div class="field"><input type="text" id="giFind" placeholder="بحث في الأعضاء..." autocomplete="off"></div>` : ""}<div id="giList">${rows}</div>${ch ? `<div class="hint">${gCount(g)} · قايمة المتابعين مخفية للخصوصية (حتى عن المشرفين)</div>` : (g.members || []).length > 100 ? `<div class="hint">عرض أول 100 فقط</div>` : ""}
     <div class="actions" style="margin-top:20px">${member && (!owner || (g.members || []).length > 1) ? `<button class="btn-danger" id="giLeave">${owner ? "الخروج ونقل الملكية" : ch ? "إلغاء المتابعة" : "الخروج من المجموعة"}</button>` : ""}${owner ? `<button class="btn-danger" id="giDel">حذف ${ch ? "القناة" : "المجموعة"}</button>` : ""}</div>`, true);
   const q = id => sh.querySelector(id), up = patch => updateDoc(doc(db, "groups", gid), patch).then(() => openGroupInfo(gid)).catch(() => toast("تعذّر الحفظ"));
-  const l = q("#giLink"); if (l) l.onclick = () => copyText(inviteLink(g), "اتنسخ رابط الدعوة");
+  const l = q("#giLink"); if (l) l.onclick = () => shareOrCopy(inviteLink(g), g.name || "ES Chat Pro", "اتنسخ رابط الدعوة");
   const rs = q("#giReset"); if (rs) rs.onclick = async () => {
     if (!confirm("الرابط القديم هيبطّل يشتغل لأي حد جديد. تكمل؟")) return;
     const k = newKey();

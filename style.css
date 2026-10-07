@@ -1,6 +1,6 @@
 :root{
   --ink:#020618;--deep:#050d2b;--panel:#071033;--panel2:#0a173f;--line:#13245a;
-  --blue:#2f6bff;--glow:var(--glow);--ice:#9ebcff;
+  --blue:#2f6bff;--glow:#3b7bff;--ice:#9ebcff;
   --text:#eaf0ff;--muted:#7f8fb8;--danger:#ff5c7a;--ok:#4be0a0;
   --silver:linear-gradient(145deg,#f6f9fe 0%,#a3b0c4 48%,#e3eaf4 100%);
   --mine:#123089;--mine-line:#2a55d6;--mine-a:#173a9f;--mine-b:#0f2a78;--halo:#0b1d6b;--them:#0a1644;
@@ -305,3 +305,36 @@ img{-webkit-user-drag:none;user-drag:none}
 .pin-bar{display:flex;gap:6px;overflow:auto;padding:7px 12px;border-bottom:1px solid var(--line);background:#07143bd9}.pin-item{display:flex;align-items:center;gap:7px;min-width:0;flex:1;text-align:start;border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:11px;padding:7px 9px}.pin-item span:last-child{min-width:0}.pin-item b,.pin-item small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pin-item small{color:var(--muted);font-size:11px;margin-top:2px}.pin-i{font-size:15px}
 .stats-tabs{display:flex;gap:7px;overflow:auto;margin:12px 0 16px}.stats-tabs button{height:36px;padding:0 13px;border-radius:10px;border:1px solid var(--line);background:var(--ink);color:var(--muted);white-space:nowrap}.stats-tabs button.on{background:#0e2270;color:var(--text);border-color:var(--blue)}
 .mfile{display:flex;align-items:center;gap:8px;color:var(--ice);text-decoration:none;border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:9px 10px}.mfile span{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mfile small{color:var(--muted);margin-inline-start:auto}
+
+
+/* ---------- v25: كروت الروابط + تظبيط التصميم ---------- */
+.lcard{display:flex;align-items:center;gap:11px;margin-top:7px;padding:9px 10px;border-radius:14px;background:#030a24aa;border:1px solid var(--line);color:inherit;text-decoration:none;width:min(280px,100%);min-height:62px;transition:border-color .15s,background .15s}
+.lcard:hover,.lcard:focus-visible{border-color:var(--blue);background:#071033}
+.lcard:empty::before{content:"";width:100%;height:42px;border-radius:10px;background:linear-gradient(90deg,#0a173f,#13245a,#0a173f);background-size:200% 100%;animation:lcsk 1.2s linear infinite}
+@keyframes lcsk{to{background-position:-200% 0}}
+.lcard img,.lc-ph{width:46px;height:46px;flex:0 0 46px;border-radius:12px;object-fit:cover}
+.lc-ph{display:grid;place-items:center;background:linear-gradient(145deg,#1b2f78,#0a1236);border:1px solid #2a3f93;color:var(--ice);font-weight:700}
+.lc-t{min-width:0;display:flex;flex-direction:column;gap:2px}
+.lc-t b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lc-t small{font-size:12px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.5}
+.lc-t i{font-style:normal;font-size:11px;color:var(--ice)}
+
+/* ترتيب وتنعيم */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{-webkit-font-smoothing:antialiased;line-height:1.5}
+.list,.messages,.sheet,.screen.scroll{overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#1a2c70 transparent}
+.msg .txt{text-wrap:pretty;overflow-wrap:anywhere}
+.msg{box-shadow:0 1px 0 #0000001f}
+.chat-item{transition:background .15s,border-color .15s}
+.chat-item:active{background:#0d1d54}
+.icon,.send,.btn-primary,.btn-ghost,.btn-danger{transition:transform .12s,box-shadow .15s,border-color .15s}
+.icon:active,.send:active,.btn-primary:active,.btn-ghost:active{transform:scale(.96)}
+.send:hover,.btn-primary:hover{box-shadow:0 0 22px color-mix(in srgb,var(--glow) 45%,transparent)}
+.composer input{font-size:16px}
+.chatbar{padding-top:max(10px,env(safe-area-inset-top))}
+.top{padding-top:max(14px,env(safe-area-inset-top))}
+@media(max-width:760px){
+  .top{height:calc(70px + env(safe-area-inset-top,0px))}
+  .chatbar{height:calc(68px + env(safe-area-inset-top,0px));flex-basis:calc(68px + env(safe-area-inset-top,0px))}
+  .lcard{width:100%}
+}
