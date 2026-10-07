@@ -111,6 +111,15 @@
     }
   }, 8000);
 </script>
-<script type="module" src="app.js"></script>
+<script type="module">
+  import("./app.js?v=23").catch(err => {
+    const e = document.getElementById("bootError");
+    if (e) {
+      e.hidden = false;
+      e.textContent = "تعذّر تشغيل التطبيق: " + (err?.message || "خطأ JavaScript") + " — افتح الصفحة من جديد بعد رفع آخر نسخة.";
+    }
+    console.error("ES Chat boot error", err);
+  });
+</script>
 </body>
 </html>

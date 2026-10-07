@@ -1,0 +1,401 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isOwner() {
+      return signedIn()
+        && request.auth.token.email == 'moreand458@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+    function notBanned() {
+      return !(exists(/databases/$(db)/documents/users/$(request.auth.uid))
+        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('banned', false) == true);
+    }
+    function siteFlag(k) {
+      return !exists(/databases/$(db)/documents/settings/site)
+        || get(/databases/$(db)/documents/settings/site).data.get(k, true) != false;
+    }
+    function validProfile(d) {
+      return d.get('name', 'x').size() >= 1 && d.get('name', 'x').size() <= 40
+        && d.get('bio', '').size() <= 160
+        && d.get('photo', '').size() < 150000
+        && d.get('gender', 'male') in ['male', 'female'];
+    }
+
+    // ---------- المستخدمون ----------
+    match /users/{uid} {
+      allow get: if signedIn() && (request.auth.uid == uid || isOwner());
+      allow list: if isOwner();
+      allow create: if isOwner() && request.auth.uid == uid
+        || (signedIn() && request.auth.uid == uid && siteFlag('registrationOpen')
+            && request.resource.data.keys().hasOnly(['uid','name','createdAt','lastLogin','loginCount','onboarded'])
+            && validProfile(request.resource.data));
+      allow update: if isOwner()
+        || (signedIn() && request.auth.uid == uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['name','photo','gender','bio','username','lastLogin','loginCount','onboarded','lastSeen','hideLastSeen','readReceipts','noAdd'])
+            && (!('username' in request.resource.data.diff(resource.data).affectedKeys())
+                || resource.data.get('username', '') == '')
+            && validProfile(request.resource.data));
+      allow delete: if isOwner();
+    }
+
+    match /users/{uid}/public/{d} {
+      allow get: if signedIn();
+      allow list: if isOwner();
+      allow create, update: if signedIn() && (request.auth.uid == uid || isOwner())
+        && request.resource.data.keys().hasOnly(['uid','name','photo','gender','bio','username','hideLastSeen','lastSeen','verified'])
+        && request.resource.data.uid == uid && validProfile(request.resource.data);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/private/{d} {
+      allow read, write: if signedIn() && (request.auth.uid == uid || isOwner());
+    }
+
+    match /users/{uid}/data/{d} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/tokens/{t} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // مفاتيح عامة للمرحلة الأولى من التشفير: لا يوجد أي private key هنا.
+    match /users/{uid}/crypto/{deviceId} {
+      allow get, list: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['deviceId','identityDHPublic','identitySignPublic','signedPreKeyPublic','signedPreKeySignature','preKeysPublic','protocol'])
+        && request.resource.data.deviceId == deviceId
+        && request.resource.data.preKeysPublic is list
+        && request.resource.data.preKeysPublic.size() <= 100
+        && request.resource.data.protocol == 'e2ee-foundation-p256-v1';
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /settings/{d} {
+      allow read: if signedIn();
+      allow write: if isOwner();
+    }
+
+    // ---------- أسماء المستخدمين (فريدة) ----------
+    match /usernames/{u} {
+      allow get: if signedIn();
+      allow list: if isOwner();
+      allow create: if signedIn()
+        && u.matches('^[a-z0-9_]{3,20}$')
+        && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if isOwner();
+    }
+
+    // ---------- المحادثات (public = الغرفة العامة، والخاصة id = uid1_uid2) ----------
+    match /chats/{chatId} {
+      function inId() { return signedIn() && (chatId.split('_')[0] == request.auth.uid || chatId.split('_')[1] == request.auth.uid); }
+      allow get: if inId();
+      allow list: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if inId() && notBanned()
+        && request.resource.data.keys().hasOnly(['members','lastText','lastAt','lastUid','typing','read','ttl'])
+        && request.resource.data.members.size() == 2
+        && request.auth.uid in request.resource.data.members
+        && chatId == request.resource.data.members[0] + '_' + request.resource.data.members[1];
+      allow update: if inId() && notBanned()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastText','lastAt','lastUid','typing','read','ttl','pin','pins'])
+        && request.resource.data.get('pins', []).size() <= 3;
+    }
+
+    match /chats/{chatId}/messages/{m} {
+      function inChat() { return chatId == 'public' || chatId.split('_')[0] == request.auth.uid || chatId.split('_')[1] == request.auth.uid; }
+      allow read: if signedIn() && inChat();
+      allow create: if signedIn() && notBanned() && inChat() && (chatId != 'public' || isOwner() || siteFlag('publicOpen'))
+        && (chatId == 'public' || (('cipher' in request.resource.data) && !('loc' in request.resource.data) && !('poll' in request.resource.data) && !('text' in request.resource.data) && !('img' in request.resource.data) && !('file' in request.resource.data)))
+        && request.resource.data.keys().hasOnly(['uid','text','at','reply','exp','img','loc','fwd','poll','cipher'])
+        && (chatId == 'public' || request.resource.data.keys().hasOnly(['uid','at','exp','cipher']))
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.get('text', '') is string
+        && request.resource.data.get('text', '').size() <= 2000
+        && (request.resource.data.get('text', '').size() > 0 || 'img' in request.resource.data || 'loc' in request.resource.data || 'poll' in request.resource.data
+            || ('cipher' in request.resource.data
+              && request.resource.data.cipher.v == 2
+              && request.resource.data.cipher.alg == 'ECDH-P256-AESGCM-DUAL'
+              && request.resource.data.cipher.keys().hasOnly(['v','alg','recipient','sender'])
+              && request.resource.data.cipher.recipient.keys().hasOnly(['senderEphemeralPublic','iv','ciphertext'])
+              && request.resource.data.cipher.sender.keys().hasOnly(['senderIdentityPublic','iv','ciphertext'])
+              && request.resource.data.cipher.recipient.iv is string && request.resource.data.cipher.recipient.iv.size() == 16
+              && request.resource.data.cipher.sender.iv is string && request.resource.data.cipher.sender.iv.size() == 16
+              && request.resource.data.cipher.recipient.ciphertext is string && request.resource.data.cipher.recipient.ciphertext.size() <= 600000
+              && request.resource.data.cipher.sender.ciphertext is string && request.resource.data.cipher.sender.ciphertext.size() <= 600000))
+        && (!('poll' in request.resource.data) || (request.resource.data.poll.keys().hasOnly(['q','o'])
+              && request.resource.data.poll.q is string && request.resource.data.poll.q.size() >= 1 && request.resource.data.poll.q.size() <= 200
+              && request.resource.data.poll.o is list && request.resource.data.poll.o.size() >= 2 && request.resource.data.poll.o.size() <= 12))
+        && request.resource.data.get('img', '').size() < 400000;
+      allow update: if (signedIn() && resource.data.uid == request.auth.uid
+        && (chatId == 'public' || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted']))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted','text','img','loc','reply'])
+        && request.resource.data.get('deleted', false) == true)
+        // تعديل منشور خاص: صاحبه فقط
+        || (signedIn() && chatId != 'public' && resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cipher'])
+          && request.resource.data.cipher.keys().hasOnly(['v','alg','recipient','sender'])
+          && request.resource.data.cipher.v == 2
+          && request.resource.data.cipher.alg == 'ECDH-P256-AESGCM-DUAL')
+        || (signedIn() && chatId == 'public' && resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+        // تفاعل بإيموجي: كل مستخدم يعدّل خانته فقط، والقراءة محصورة بأطراف المحادثة
+        || (signedIn() && chatId == 'public' && inChat()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+          && request.resource.data.reactions is map
+          && request.resource.data.reactions.diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
+        || (signedIn() && chatId != 'public' && inChat()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactionCiphers'])
+          && request.resource.data.reactionCiphers is map
+          && request.resource.data.reactionCiphers.diff(resource.data.get('reactionCiphers', {})).affectedKeys().hasOnly([request.auth.uid])
+          && (!(request.auth.uid in request.resource.data.reactionCiphers)
+              || (request.resource.data.reactionCiphers[request.auth.uid].keys().hasOnly(['v','alg','senderIdentityPublic','iv','ciphertext'])
+                && request.resource.data.reactionCiphers[request.auth.uid].alg == 'ECDH-P256-AESGCM-SHARED'
+                && request.resource.data.reactionCiphers[request.auth.uid].ciphertext is string
+                && request.resource.data.reactionCiphers[request.auth.uid].ciphertext.size() <= 20000)))
+        // تصويت في استفتاء: المشارك يعدّل صوته هو بس
+        || (signedIn() && inChat() && 'poll' in resource.data
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+          && request.resource.data.votes.diff(resource.data.get('votes', {})).affectedKeys().hasOnly([request.auth.uid])
+          && (!(request.auth.uid in request.resource.data.votes)
+              || (request.resource.data.votes[request.auth.uid] is int
+                  && request.resource.data.votes[request.auth.uid] >= 0
+                  && request.resource.data.votes[request.auth.uid] < resource.data.poll.o.size())));
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || (isOwner() && chatId == 'public'));
+    }
+
+    // ---------- المجموعات والقنوات ----------
+    function gm(g) { return request.auth.uid in g.members; }
+    function gAdmin(g) { return gm(g) && (request.auth.uid == g.owner || request.auth.uid in g.admins); }
+    function gMax(g) { return g.kind == 'channel' ? 5000 : 256; }
+    function secretP(gid) { return /databases/$(db)/documents/groups/$(gid)/secret/invite; }
+    function invitedP(gid, u) { return /databases/$(db)/documents/groups/$(gid)/invites/$(u); }
+    // رابط الدعوة: القناة العامة مفتوحة، وغير كده لو فيه مفتاح مسجّل لازم العضو الجديد يكون كتب نفس المفتاح في نفس العملية
+    function inviteOk(gid, g) {
+      return g.get('public', false) == true || !exists(secretP(gid))
+        || getAfter(invitedP(gid, request.auth.uid)).data.k == get(secretP(gid)).data.key;
+    }
+
+    match /groups/{gid} {
+      // مستند المجموعة الكامل لا يُقرأ إلا بواسطة عضو؛ دليل القنوات العام منفصل أسفل القاعدة.
+      allow get, list: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn() && notBanned()
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.keys().hasOnly(['kind','name','desc','photo','owner','admins','members','public','joinOpen','handle','createdAt','lastText','lastAt','lastUid','lastName'])
+        && request.resource.data.kind in ['group','channel']
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 50
+        && request.resource.data.get('desc', '').size() <= (request.resource.data.kind == 'channel' ? 512 : 200)
+        && request.resource.data.get('photo', '').size() < 150000
+        && request.resource.data.admins == [request.auth.uid]
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members.size() <= 60;
+      allow update: if signedIn() && notBanned() && (
+        // 1) المشرفين: تعديل البيانات وإضافة/إزالة الأعضاء
+        (gAdmin(resource.data)
+          && request.resource.data.owner == resource.data.owner
+          && request.resource.data.kind == resource.data.kind
+          && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 50
+          && request.resource.data.get('desc', '').size() <= (resource.data.kind == 'channel' ? 512 : 200)
+          && request.resource.data.get('photo', '').size() < 150000
+          && resource.data.owner in request.resource.data.members
+          && request.resource.data.members.size() <= gMax(resource.data)
+          && (request.resource.data.admins == resource.data.admins || request.auth.uid == resource.data.owner)
+          && request.resource.data.get('pins', []).size() <= 3
+          // مفتاح handle مش موجود في اللستة دي، يعني ثابت بعد الإنشاء ومينفعش يتغيّر من هنا (كان ينفع يتسرق handle مجموعة تانية)
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['name','desc','photo','public','joinOpen','approve','noReact','sendAdmins','verified','members','admins','banned','muted','pin','pins'])
+          && (request.resource.data.get('verified', false) == resource.data.get('verified', false) || request.auth.uid == resource.data.owner))
+        // 2) انضمام / متابعة بالرابط
+        || (resource.data.joinOpen == true && resource.data.get('approve', false) == false && !(request.auth.uid in resource.data.members) && !(request.auth.uid in resource.data.get('banned', [])) && inviteOk(gid, resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+          && request.auth.uid in request.resource.data.members
+          && request.resource.data.members.hasAll(resource.data.members)
+          && request.resource.data.members.size() == resource.data.members.size() + 1
+          && request.resource.data.members.size() <= gMax(resource.data))
+        // 3) مغادرة
+        || (gm(resource.data) && request.auth.uid != resource.data.owner
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members','admins'])
+          && !(request.auth.uid in request.resource.data.members)
+          && !(request.auth.uid in request.resource.data.admins)
+          && request.resource.data.members.hasOnly(resource.data.members)
+          && request.resource.data.members.size() == resource.data.members.size() - 1)
+        // 3.5) المالك بيخرج وبينقل الملكية لعضو
+        || (request.auth.uid == resource.data.owner
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['owner','members','admins'])
+          && request.resource.data.owner != request.auth.uid
+          && request.resource.data.owner in resource.data.members
+          && request.resource.data.owner in request.resource.data.admins
+          && !(request.auth.uid in request.resource.data.members)
+          && !(request.auth.uid in request.resource.data.admins)
+          && request.resource.data.members.hasOnly(resource.data.members)
+          && request.resource.data.members.size() == resource.data.members.size() - 1)
+        // 3.7) قبول دعوة مشرف (التوكن لازم يكون موجود، وبيتمسح في نفس العملية فمينفعش يتستخدم مرتين)
+        || (gm(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['admins'])
+          && request.auth.uid in request.resource.data.admins
+          && request.resource.data.admins.hasAll(resource.data.admins)
+          && request.resource.data.admins.size() == resource.data.admins.size() + 1
+          && (resource.data.kind == 'group' || request.resource.data.admins.size() <= 16)
+          && exists(/databases/$(db)/documents/groups/$(gid)/adminInvites/$(getAfter(/databases/$(db)/documents/groups/$(gid)/adminAccepts/$(request.auth.uid)).data.t)))
+        // 4) تحديث آخر رسالة (الأعضاء في المجموعات، والمشرفين في القنوات)
+        || (gm(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastText','lastAt','lastUid','lastName'])
+          && ((resource.data.kind == 'group' && resource.data.get('sendAdmins', false) == false) || gAdmin(resource.data)))
+      );
+      allow delete: if signedIn() && request.auth.uid == resource.data.owner;
+    }
+
+    // دليل القنوات العامة فقط؛ لا يحتوي members أو admins.
+    match /groupDirectory/{gid} {
+      allow get, list: if signedIn();
+      allow create: if signedIn() && request.auth.uid == request.resource.data.owner
+        && request.resource.data.keys().hasOnly(['kind','name','desc','photo','owner','public','verified','joinOpen','handle','createdAt','lastText','lastAt','lastUid'])
+        && request.resource.data.kind in ['group','channel']
+        && ((request.resource.data.kind == 'channel' && request.resource.data.public == true) || request.resource.data.public == false)
+        && (existsAfter(/databases/$(db)/documents/groups/$(gid))
+          ? getAfter(/databases/$(db)/documents/groups/$(gid)).data.owner == request.auth.uid : false);
+      allow update: if signedIn() && resource.data.owner == request.auth.uid
+        && request.auth.uid == request.resource.data.owner
+        && request.resource.data.keys().hasOnly(['kind','name','desc','photo','owner','public','verified','joinOpen','handle','createdAt','lastText','lastAt','lastUid'])
+        && get(/databases/$(db)/documents/groups/$(gid)).data.owner == request.auth.uid;
+      allow delete: if signedIn() && (request.auth.uid == resource.data.owner || isOwner());
+    }
+
+    // مفتاح رابط الدعوة (الأعضاء بس يقروه، والمشرف يغيّره = إعادة تعيين الرابط)
+    match /groups/{gid}/secret/{d} {
+      function G() { return get(/databases/$(db)/documents/groups/$(gid)).data; }
+      allow read: if signedIn() && d == 'invite' && request.auth.uid in G().members;
+      allow create, update: if signedIn() && d == 'invite'
+        && request.resource.data.keys().hasOnly(['key'])
+        && request.resource.data.key is string && request.resource.data.key.size() >= 12 && request.resource.data.key.size() <= 40
+        && (gAdmin(G()) || getAfter(/databases/$(db)/documents/groups/$(gid)).data.owner == request.auth.uid);
+    }
+    // إثبات إن العضو الجديد معاه المفتاح (بيتكتب في نفس العملية مع الانضمام)
+    match /groups/{gid}/invites/{u} {
+      allow create, update: if signedIn() && notBanned() && request.auth.uid == u
+        && request.resource.data.keys().hasOnly(['k']) && request.resource.data.k is string && request.resource.data.k.size() <= 40;
+      allow read, delete: if signedIn() && request.auth.uid == u;
+    }
+    // روابط دعوة المشرف (المالك بس بيعملها)
+    match /groups/{gid}/adminInvites/{t} {
+      function G() { return get(/databases/$(db)/documents/groups/$(gid)).data; }
+      allow create: if signedIn() && G().owner == request.auth.uid && t.matches('^[A-Za-z0-9]{16,40}$')
+        && request.resource.data.keys().hasOnly(['at']);
+      allow read: if signedIn() && G().owner == request.auth.uid;
+      allow delete: if signedIn() && (G().owner == request.auth.uid
+        || getAfter(/databases/$(db)/documents/groups/$(gid)/adminAccepts/$(request.auth.uid)).data.t == t);
+    }
+    match /groups/{gid}/adminAccepts/{u} {
+      allow create, update: if signedIn() && notBanned() && request.auth.uid == u
+        && request.resource.data.keys().hasOnly(['t']) && request.resource.data.t is string && request.resource.data.t.size() <= 40;
+      allow read, delete: if signedIn() && request.auth.uid == u;
+    }
+
+    // طلبات الانضمام (للمجموعات اللي فيها "الموافقة على الأعضاء الجدد")
+    match /groups/{gid}/requests/{uid} {
+      function G() { return get(/databases/$(db)/documents/groups/$(gid)).data; }
+      allow create: if signedIn() && notBanned() && request.auth.uid == uid
+        && G().get('joinOpen', false) == true && G().get('approve', false) == true && !(uid in G().members) && !(uid in G().get('banned', [])) && inviteOk(gid, G())
+        && request.resource.data.keys().hasOnly(['at','name']);
+      allow read, delete: if signedIn() && (request.auth.uid == uid || gAdmin(G()));
+    }
+
+    match /groups/{gid}/messages/{m} {
+      function G() { return get(/databases/$(db)/documents/groups/$(gid)).data; }
+      allow read: if signedIn() && (request.auth.uid in G().members || (G().get('public', false) == true && G().kind == 'channel'));
+      allow create: if signedIn() && notBanned() && request.auth.uid in G().members
+        && (!(request.auth.uid in G().get('muted', {})) || G().get('muted', {})[request.auth.uid] < request.time.toMillis())
+        && ((G().kind == 'group' && G().get('sendAdmins', false) == false) || request.auth.uid == G().owner || request.auth.uid in G().admins)
+        && request.resource.data.keys().hasOnly(['uid','text','at','reply','img','loc','fwd','poll'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.get('text', '') is string
+        && request.resource.data.get('text', '').size() <= 2000
+        && (request.resource.data.get('text', '').size() > 0 || 'img' in request.resource.data || 'loc' in request.resource.data || 'poll' in request.resource.data)
+        && (!('poll' in request.resource.data) || (request.resource.data.poll.keys().hasOnly(['q','o'])
+              && request.resource.data.poll.q is string && request.resource.data.poll.q.size() >= 1 && request.resource.data.poll.q.size() <= 200
+              && request.resource.data.poll.o is list && request.resource.data.poll.o.size() >= 2 && request.resource.data.poll.o.size() <= 12))
+        && request.resource.data.get('img', '').size() < 400000;
+      allow update: if (signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted','text','img','loc','reply'])
+        && request.resource.data.deleted == true)
+        // تعديل منشور: صاحبه فقط، والنص لا يتجاوز 2000 حرف
+        || (signedIn() && resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+        // تفاعل بإيموجي: العضو يعدّل خانته هو بس جوه reactions
+        || (signedIn() && request.auth.uid in G().members && G().get('noReact', false) == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+          && request.resource.data.reactions is map
+          && request.resource.data.reactions.diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([request.auth.uid]))
+        // تصويت في استفتاء: العضو يعدّل صوته هو بس
+        || (signedIn() && request.auth.uid in G().members && 'poll' in resource.data
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+          && request.resource.data.votes.diff(resource.data.get('votes', {})).affectedKeys().hasOnly([request.auth.uid])
+          && (!(request.auth.uid in request.resource.data.votes)
+              || (request.resource.data.votes[request.auth.uid] is int
+                  && request.resource.data.votes[request.auth.uid] >= 0
+                  && request.resource.data.votes[request.auth.uid] < resource.data.poll.o.size())));
+      allow delete: if signedIn() && (resource.data.uid == request.auth.uid
+        || (request.auth.uid in G().members && (request.auth.uid == G().owner || request.auth.uid in G().admins)));
+    }
+
+    // إيصالات القراءة: لا يكتبها إلا القارئ نفسه، ولا يقرأها إلا مرسل الرسالة أو مشرف المجموعة/القناة أو طرف الخاص
+    match /groups/{gid}/messages/{m}/receipts/{uid} {
+      function G() { return get(/databases/$(db)/documents/groups/$(gid)).data; }
+      function M() { return get(/databases/$(db)/documents/groups/$(gid)/messages/$(m)).data; }
+      allow create, update: if signedIn() && uid == request.auth.uid && uid in G().members && request.resource.data.keys().hasOnly(['uid','at']);
+      allow read: if signedIn() && (request.auth.uid == M().uid || request.auth.uid == G().owner || request.auth.uid in G().admins);
+    }
+    match /chats/{chatId}/messages/{m}/receipts/{uid} {
+      function M() { return get(/databases/$(db)/documents/chats/$(chatId)/messages/$(m)).data; }
+      allow create, update: if signedIn() && uid == request.auth.uid && (chatId == 'public' || (chatId.split('_')[0] == request.auth.uid || chatId.split('_')[1] == request.auth.uid)) && request.resource.data.keys().hasOnly(['uid','at']);
+      allow read: if signedIn() && (chatId == 'public' ? (request.auth.uid == M().uid || isOwner()) : (chatId.split('_')[0] == request.auth.uid || chatId.split('_')[1] == request.auth.uid));
+    }
+    // إحصائيات مجهّلة: كل عضو يكتب سجله فقط، والمشرفون يقرؤون التجميع
+    match /groups/{gid}/analytics/{uid} {
+      function G() { return get(/databases/$(db)/documents/groups/$(gid)).data; }
+      allow create, update: if signedIn() && uid == request.auth.uid && uid in G().members
+        && request.resource.data.keys().hasOnly(['uid','opens','lastOpen','firstOpen'])
+        && request.resource.data.uid == uid && request.resource.data.opens is int;
+      allow read, list: if signedIn() && (request.auth.uid == G().owner || request.auth.uid in G().admins);
+    }
+
+    match /handles/{h} {
+      allow get: if signedIn();
+      allow list: if isOwner();
+      allow create: if signedIn() && h.matches('^[a-z0-9_]{3,20}$')
+        && request.resource.data.keys().hasOnly(['gid','owner'])
+        && request.resource.data.owner == request.auth.uid
+        && getAfter(/databases/$(db)/documents/groups/$(request.resource.data.gid)).data.owner == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.owner == request.auth.uid
+        || get(/databases/$(db)/documents/groups/$(resource.data.gid)).data.owner == request.auth.uid);
+    }
+
+    match /reports/{id} {
+      allow create: if signedIn() && request.resource.data.reporter == request.auth.uid
+        && request.resource.data.keys().hasOnly(['reporter','kind','chatId','messageId','targetUid','text','at'])
+        && request.resource.data.text is string && request.resource.data.text.size() <= 200;
+      allow read, delete: if isOwner();
+    }
+
+    // ---------- إحصائيات الزيارات ----------
+    match /stats/{d} {
+      allow read: if isOwner();
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['visits']) && request.resource.data.visits == 1;
+      allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visits'])
+        && request.resource.data.visits == resource.data.visits + 1;
+    }
+
+    // ---------- سجل الدخول ----------
+    match /logins/{id} {
+      allow read: if isOwner();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid','name','at']);
+    }
+  }
+}
