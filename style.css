@@ -500,3 +500,24 @@ button>.ico{margin:auto}
 .sp-feat div{padding:12px 4px;border-bottom:1px solid #10205a;line-height:1.7}
 .sp-policy p{line-height:1.9;margin:0 0 12px;color:var(--text);font-size:14px}
 @media (max-width:760px){.settings-page{padding-bottom:84px}}
+
+/* ================= v32: هيدر المحادثة بشكل تيليجرام + شارة المالك ================= */
+.chatbar{height:auto!important;flex-basis:auto!important;min-height:0;background:transparent;border-bottom:0;padding:max(10px,env(safe-area-inset-top)) 12px 8px;gap:8px;align-items:center}
+.chatbar .back{width:46px;height:46px;flex:0 0 46px;border-radius:50%;background:var(--panel);border:1px solid var(--line);box-shadow:0 4px 16px #0006}
+.chat-head{flex:1;min-width:0;height:52px;padding:0 6px 0 14px;border-radius:26px;background:var(--panel);border:1px solid var(--line);box-shadow:0 4px 16px #0006;gap:10px}
+.chat-head .avatar{width:40px;height:40px;flex-basis:40px;font-size:16px}
+.chat-head .av-wrap{flex:0 0 40px}
+.chat-head .t{flex:1;min-width:0}
+.chat-head b{flex-wrap:nowrap;white-space:nowrap;gap:4px;line-height:1.25}
+.chat-head b .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-head b .vbadge-wrap,.chat-head b .ttl-chip{flex:0 0 auto}
+.chat-head small{margin-top:1px}
+.head-actions{flex:0 0 auto;height:52px;display:flex;align-items:center;gap:0;padding:0 4px;border-radius:26px;background:var(--panel);border:1px solid var(--line);box-shadow:0 4px 16px #0006}
+.head-actions:not(:has(button:not(.hidden))){display:none}
+.head-actions .icon-btn{width:36px;height:40px;border-radius:50%}
+.head-actions .icon-btn svg{width:21px;height:21px}
+@media (min-width:761px){.chatbar{padding:12px 20px 8px}}
+.vbadge-wrap.owner-badge{filter:drop-shadow(0 1px 4px rgba(245,184,0,.6))}
+.official-card{display:flex;align-items:center;gap:12px;margin:12px auto 0;max-width:340px;padding:10px 14px;border-radius:16px;border:1px solid #f5b80066;background:linear-gradient(135deg,#f5b80026,#f5b80008);text-align:start}
+.official-card b{display:block;color:#ffd75e;font-size:14px}.official-card small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.chip.owner{background:linear-gradient(145deg,#ffd75e,#f5b800);color:#2a1b00;border-color:#ffd75e}

@@ -82,10 +82,12 @@
     <header class="chatbar" id="chatbar">
       <button class="back" id="back" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div id="chatHead" class="chat-head"></div>
+      <div class="head-actions">
       <button class="icon-btn hidden" id="callAudioBtn" aria-label="مكالمة صوتية" title="مكالمة صوتية" data-ic="phone" data-s="22"></button>
       <button class="icon-btn hidden" id="callVideoBtn" aria-label="مكالمة فيديو" title="مكالمة فيديو" data-ic="video" data-s="22"></button>
       <button class="icon-btn hidden" id="chatSearchBtn" aria-label="بحث في المحادثة"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <button class="icon-btn hidden" id="chatMenuBtn" aria-label="خيارات المحادثة"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="19" r="1.8" fill="currentColor"/></svg></button>
+      </div>
     </header>
     <div id="pinBar" class="pin-bar hidden"></div>
     <section class="messages" id="messages"></section>
@@ -124,7 +126,7 @@
   }, 8000);
 </script>
 <script type="module">
-  import("./app.js?v=31").catch(err => {
+  import("./app.js?v=32").catch(err => {
     const e = document.getElementById("bootError");
     if (e) {
       e.hidden = false;

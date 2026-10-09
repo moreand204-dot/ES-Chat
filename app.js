@@ -190,7 +190,9 @@ function vpClick(e, el) {
 
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 2600); }
 
-const badge = (u, s = 16) => u && u.verified
+const isOfficial = uid => !!uid && !!S.site && S.site.ownerUid === uid;
+const ownerBadge = s => `<span class="vbadge-wrap owner-badge" title="المالك · حساب رسمي" aria-label="المالك · حساب رسمي"><svg class="vbadge" width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#f5b800"/><path d="M6 16.5h12l.8-7-3.6 3L12 7.8 8.8 12.5l-3.6-3z" fill="#3a2600"/><rect x="6" y="17.3" width="12" height="1.6" rx=".8" fill="#3a2600"/></svg></span>`;
+const badge = (u, s = 16) => u && u.uid && isOfficial(u.uid) ? ownerBadge(s) : u && u.verified
   ? `<span class="vbadge-wrap" title="حساب موثّق داخل ES Chat" aria-label="حساب موثّق"><svg class="vbadge" width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#1877f2"/><path d="m7.1 12.2 3.1 3.1 6.8-7" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
   : "";
 const avatar = (u, cls = "") => {
@@ -321,7 +323,7 @@ async function onAuth(user) {
   initE2EEDevice(user.uid, publicData => setDoc(doc(db, "users", user.uid, "crypto", publicData.deviceId), publicData, { merge: true }))
     .then(v => { S.e2ee = v; })
     .catch(e => { console.warn("E2EE foundation", e); S.e2ee = { ready: false, error: e.message || "crypto init failed" }; });
-  S.unsub.site = onSnapshot(doc(db, "settings", "site"), s => { S.site = s.data() || {}; siteChanged(); }, () => {});
+  S.unsub.site = onSnapshot(doc(db, "settings", "site"), s => { S.site = s.data() || {}; if (S.user && isOwner() && S.site.ownerUid !== S.user.uid) setDoc(doc(db, "settings", "site"), { ownerUid: S.user.uid }, { merge: true }).catch(() => {}); siteChanged(); }, () => {});
   watchIncomingCalls();
   try {
     const ref = doc(db, "users", user.uid);
@@ -851,7 +853,7 @@ async function openByUsername(u) {
 /* إعدادات الموقع (بتتحكم فيها من لوحة المالك) */
 function siteChanged() {
   if (S.me && (S.view === "app" || S.view === "notice")) route();
-  if (S.view === "app") { paintAnn(); applyComposerState(); renderList(); }
+  if (S.view === "app") { paintAnn(); applyComposerState(); renderList(); if (S.chat) paintHeadInner(); }
 }
 function paintAnn() {
   const bar = $("#annBar"), t = (S.site.announcement || "").trim();
@@ -1168,11 +1170,11 @@ function paintHeadInner() {
   const c = S.chat; if (!c) return; $("#chatSearchBtn").classList.remove("hidden"); $("#callAudioBtn").classList.toggle("hidden", c.type !== "dm"); $("#callVideoBtn").classList.toggle("hidden", c.type !== "dm");
   $("#chatMenuBtn").classList.toggle("hidden", c.type === "public");
   if (c.type === "group" || c.type === "channel") {
-    const g = c.group; $("#chatHead").innerHTML = `${gAvatar(g)}<div class="t"><b>${g.kind === "channel" ? CHAN_IC : ""}${esc(g.name)}${g.verified ? badge(g, 16) : ""}</b><small>${esc(gCount(g))}${g.handle ? " · <bdi>#" + esc(g.handle) + "</bdi>" : ""}</small></div>`; return;
+    const g = c.group; $("#chatHead").innerHTML = `${gAvatar(g)}<div class="t"><b>${g.kind === "channel" ? CHAN_IC : ""}<span class="nm">${esc(g.name)}</span>${g.verified ? badge(g, 16) : ""}</b><small>${esc(gCount(g))}${g.handle ? " · <bdi>#" + esc(g.handle) + "</bdi>" : ""}</small></div>`; return;
   }
   if (c.type === "public") { $("#chatHead").innerHTML = `<div class="avatar public">ES</div><div class="t"><b>الغرفة العامة</b><small>محادثة مفتوحة لكل الأعضاء</small></div>`; return; }
   const u = S.users.get(c.peer) || {}, st = statusOf(u, c), ttl = c.doc && c.doc.ttl;
-  $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b>${esc(u.name || "مستخدم")}${badge(u, 16)}${ttl ? `<span class="ttl-chip">${ttlLabel(ttl)}</span>` : ""}</b><small class="st ${st.cls}">${st.t ? esc(st.t) : "<bdi>@" + esc(u.username || "") + "</bdi>"}</small></div>`;
+  $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b><span class="nm">${esc(u.name || "مستخدم")}</span>${badge(u, 16)}${ttl ? `<span class="ttl-chip">${ttlLabel(ttl)}</span>` : ""}</b><small class="st ${st.cls}">${st.t ? esc(st.t) : "<bdi>@" + esc(u.username || "") + "</bdi>"}</small></div>`;
 }
 
 $("#callAudioBtn").onclick = () => startCall("audio");
@@ -2368,7 +2370,8 @@ async function openProfile(uid, opts = {}) {
     ${avatar(u)}
     <h3>${esc(u.name)}${badge(u, 22)}</h3>
     <div class="un"><bdi>@${esc(u.username || "—")}</bdi></div>
-    <div class="chips">${u.role === "owner" ? `<span class="chip owner">المالك · حساب رسمي</span>` : ""}<span class="chip">${genderText(u.gender)}</span>${u.banned ? `<span class="tag-ban">موقوف</span>` : ""}</div>
+    ${isOfficial(uid) ? `<div class="official-card">${ownerBadge(22)}<div><b>الحساب الرسمي</b><small>ده الحساب الرسمي لصاحب ES Chat Pro</small></div></div>` : ""}
+    <div class="chips">${u.role === "owner" || isOfficial(uid) ? `<span class="chip owner">👑 المالك · حساب رسمي</span>` : ""}<span class="chip">${genderText(u.gender)}</span>${u.banned ? `<span class="tag-ban">موقوف</span>` : ""}</div>
     ${u.bio ? `<div class="bio">${esc(u.bio)}</div>` : ""}
     ${own ? `<div class="kv"><div>الإيميل<span>${esc(u.email || "—")}</span></div><div>آخر دخول<span>${esc(fmtDT(u.lastLogin))}</span></div><div>مرات الدخول<span>${u.loginCount || 0}</span></div><div>تاريخ التسجيل<span>${esc(fmtDT(u.createdAt))}</span></div><div>UID<span>${esc(uid)}</span></div></div>` : ""}
     <div class="actions">
