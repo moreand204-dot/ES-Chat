@@ -375,3 +375,63 @@ body{-webkit-font-smoothing:antialiased;line-height:1.5}
 
 .older{display:block;margin:6px auto 12px;padding:8px 16px;border-radius:18px;border:1px solid var(--line);background:var(--ink);color:var(--ice);font-size:12.5px}
 .older:active{transform:scale(.97)}
+
+/* ===================== v30: Telegram-style UI ===================== */
+.ico{display:block;flex:0 0 auto}
+button>.ico{margin:auto}
+.ico.fill{fill:currentColor}
+.composer{min-height:54px;border-radius:27px;padding:4px 6px;gap:2px}
+.composer .attach,.composer .emoji-btn{width:42px;height:44px;flex:0 0 42px;border:0;background:none;color:var(--muted);display:grid;place-items:center;padding:0;border-radius:50%;transition:color .15s,background .15s}
+.composer .attach:active,.composer .emoji-btn:active{background:var(--panel2);color:var(--ice)}
+.composer .attach:disabled,.composer .emoji-btn:disabled{opacity:.4}
+.sendmic{position:relative;width:46px;height:46px;flex:0 0 46px;border:0;border-radius:50%;padding:0;background:linear-gradient(145deg,var(--blue),var(--glow));color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--glow) 40%,transparent);transition:transform .12s,box-shadow .2s}
+.sendmic:active{transform:scale(.92)}
+.sendmic:disabled{opacity:.45}
+.sendmic .i-mic,.sendmic .i-send{position:absolute;inset:0;display:grid;place-items:center;transition:opacity .16s,transform .24s cubic-bezier(.3,1.4,.5,1)}
+.sendmic.is-mic .i-send{opacity:0;transform:scale(.4) rotate(-45deg)}
+.sendmic.is-send .i-mic{opacity:0;transform:scale(.4) rotate(45deg)}
+.sendmic .i-send svg{transform:scaleX(-1)}
+.recbar{flex:1;min-width:0;display:flex;align-items:center;gap:10px;height:44px;padding:0 10px;color:var(--text)}
+.rec-dot{width:11px;height:11px;flex:0 0 11px;border-radius:50%;background:#ff3b5c;animation:recBlink 1s ease-in-out infinite}
+.recbar b{min-width:40px;direction:ltr;text-align:start;font-variant-numeric:tabular-nums}
+.recbar span{flex:1;min-width:0;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec-cancel{width:40px;height:40px;border:0;border-radius:50%;background:#3a1230;color:#ff8fa5;display:grid;place-items:center;padding:0}
+.rec-cancel:active{transform:scale(.92)}
+.composer.recording .attach,.composer.recording .emoji-btn,.composer.recording input{display:none}
+@keyframes recBlink{50%{opacity:.25}}
+
+.vp{direction:ltr;display:flex;align-items:center;gap:10px;width:min(270px,64vw);padding:2px 0}
+.vp-btn{width:44px;height:44px;flex:0 0 44px;border:0;border-radius:50%;background:linear-gradient(145deg,var(--blue),var(--glow));color:#fff;display:grid;place-items:center;padding:0;box-shadow:0 3px 10px #0005}
+.vp-btn:active{transform:scale(.93)}
+.vp-body{flex:1;min-width:0}
+.vp-wave{display:flex;align-items:center;gap:2px;height:28px;cursor:pointer}
+.vp-wave i{flex:1;min-width:2px;max-width:4px;border-radius:2px;background:color-mix(in srgb,var(--ice) 38%,transparent);transition:background .1s}
+.vp-wave i.on{background:var(--ice)}
+.vp-time{margin-top:2px;font-size:11px;color:#9fb3e6;font-variant-numeric:tabular-nums}
+
+.sheet.att-sheet,.sheet.emo-sheet{padding:10px 16px 22px}
+.sheet.att-sheet #xBtn,.sheet.emo-sheet #xBtn{display:none}
+.grab{width:42px;height:5px;border-radius:3px;background:#2a3d85;margin:0 auto 12px}
+.att-title{text-align:center;font-weight:700;margin-bottom:16px}
+.att-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 8px}
+.att{border:0;background:none;color:var(--text);display:flex;flex-direction:column;align-items:center;gap:8px;padding:4px 0;font-size:12.5px}
+.att b{font-weight:500}
+.att-ic{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;color:#fff;box-shadow:0 6px 16px #0006;transition:transform .12s}
+.att:active .att-ic{transform:scale(.9)}
+.att-hint{text-align:center;margin-top:16px}
+.emo-tabs{display:flex;background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:3px;margin-bottom:6px}
+.emo-tabs button{flex:1;border:0;background:none;color:var(--muted);padding:9px;border-radius:11px;font-weight:600}
+.emo-tabs button.on{background:var(--panel2);color:var(--text)}
+.emo-scroll{max-height:46dvh;overflow-y:auto}
+.emo-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px}
+.emo-grid button{border:0;background:none;font-size:25px;line-height:1.2;padding:6px 0;border-radius:10px}
+.emo-grid button:active{background:var(--panel2)}
+.emo-img{width:1.25em;height:1.25em;vertical-align:-.28em;display:inline-block;object-fit:contain;-webkit-user-drag:none;user-select:none}
+.emo-grid .emo-img{width:1.1em;height:1.1em;vertical-align:middle}
+.emo-prev{display:flex;flex-wrap:wrap;gap:8px;font-size:26px;justify-content:center;padding:10px;background:var(--ink);border:1px solid var(--line);border-radius:14px;margin-top:8px}
+.pq .ico{display:inline-block;vertical-align:-3px;margin-inline-end:6px}
+.msg .tm .star .ico{display:inline-block;vertical-align:-1px}
+.m-chip .ico{display:inline-block;vertical-align:-2px}
+.mfile .ico{color:var(--ice)}
+.pin-i .ico{color:var(--ice)}
+.pc b .ico{display:inline-block}

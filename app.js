@@ -42,6 +42,119 @@ function dayLabel(d) {
   return d.toLocaleDateString("ar-EG", { dateStyle: "long" });
 }
 let toastT;
+/* ---------------- أيقونات SVG احترافية (بدل الرموز النصية) ---------------- */
+const IC = {
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6"/>',
+  send: '<path d="M22 2 15 22l-4-9-9-4z" fill="currentColor"/><path d="M22 2 11 13"/>',
+  attach: '<path d="m21.4 11.6-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.5a1.8 1.8 0 0 1-2.6-2.6l7.9-7.8"/>',
+  smile: '<circle cx="12" cy="12" r="9.5"/><path d="M8 14.2a4.6 4.6 0 0 0 8 0"/><path d="M9 9.5h.01M15 9.5h.01" stroke-width="2.8"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8L18 7M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7"/>',
+  play: '<path d="M8 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8A.8.8 0 0 0 8 5.2z" fill="currentColor" stroke="none"/>',
+  pause: '<rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor" stroke="none"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="3.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5L6 20"/>',
+  camera: '<path d="M3 8.5A2.5 2.5 0 0 1 5.5 6H8l1.4-2h5.2L16 6h2.5A2.5 2.5 0 0 1 21 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.6"/>',
+  file: '<path d="M14 3H7.5A2.5 2.5 0 0 0 5 5.5v13A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V8z"/><path d="M14 3v4a1 1 0 0 0 1 1h4M9 13h6M9 16.5h4"/>',
+  pin: '<path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/>',
+  poll: '<rect x="4" y="11" width="3.6" height="9" rx="1.2"/><rect x="10.2" y="4" width="3.6" height="16" rx="1.2"/><rect x="16.4" y="8" width="3.6" height="12" rx="1.2"/>',
+  sticker: '<path d="M20 12.5V7a3.5 3.5 0 0 0-3.5-3.5h-9A3.5 3.5 0 0 0 4 7v10a3.5 3.5 0 0 0 3.5 3.5H13a7.5 7.5 0 0 0 7-8z"/><path d="M20 12.5h-3.5A3.5 3.5 0 0 0 13 16v4.5"/><path d="M9 9.5h.01M14.5 9.5h.01" stroke-width="2.8"/>',
+  phone: '<path d="M5 4h3.2l1.6 4-2 1.3a11 11 0 0 0 5.9 5.9l1.3-2 4 1.6V18a2 2 0 0 1-2.2 2A15.5 15.5 0 0 1 3 6.2 2 2 0 0 1 5 4z"/>',
+  video: '<rect x="3" y="6.5" width="13" height="11" rx="3"/><path d="m16 10.5 4.2-2.4a.8.8 0 0 1 1.2.7v6.4a.8.8 0 0 1-1.2.7L16 13.5"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  star: '<path d="m12 3.3 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.6l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
+  pushpin: '<path d="M9 3h6l-1 6 3 3v2H7v-2l3-3zM12 14v7"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>'
+};
+const ic = (n, s = 22, cls = "") => `<svg class="ico ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n] || ""}</svg>`;
+document.querySelectorAll("[data-ic]").forEach(el => { el.innerHTML = ic(el.dataset.ic, +el.dataset.s || 22); });
+
+/* ---------------- شكل الإيموجي (النظام / أندرويد-واتساب / آيفون) ---------------- */
+const EMO_STYLES = [["system", "النظام"], ["google", "أندرويد / واتساب"], ["apple", "آيفون"]];
+const EMO_VER = "15.1.2";
+const EMO_RE = /(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F)\p{Emoji_Modifier}?(?:\u200D(?:\p{Emoji_Presentation}|\p{Extended_Pictographic})\uFE0F?\p{Emoji_Modifier}?)*)/gu;
+const emoMode = () => { const m = LS.get("emoji", "system"); return m === "google" || m === "apple" ? m : "system"; };
+const emoFiles = str => { const cps = Array.from(str, c => c.codePointAt(0).toString(16)), bare = cps.filter(x => x !== "fe0f"), out = [cps.join("-")]; out.push(bare.join("-")); if (bare.length === 1) out.push(bare[0] + "-fe0f"); return [...new Set(out)]; };
+const emoSrc = (mode, file) => `https://cdn.jsdelivr.net/npm/emoji-datasource-${mode}@${EMO_VER}/img/${mode}/64/${file}.png`;
+function emoImg(str, mode) {
+  const im = document.createElement("img"), f = emoFiles(str);
+  im.className = "emo-img"; im.alt = str; im.draggable = false; im.decoding = "async";
+  im.dataset.f = f.join(","); im.dataset.i = "0"; im.dataset.m = mode; im.src = emoSrc(mode, f[0]);
+  return im;
+}
+document.addEventListener("error", e => {
+  const im = e.target; if (!im || !im.classList || !im.classList.contains("emo-img")) return;
+  const f = (im.dataset.f || "").split(","), i = +im.dataset.i + 1;
+  if (i < f.length) { im.dataset.i = i; im.src = emoSrc(im.dataset.m, f[i]); return; }
+  const sp = document.createElement("span"); sp.className = "emo-fb"; sp.textContent = im.alt; im.replaceWith(sp);
+}, true);
+const EMO_SKIP = "input,textarea,script,style,.emo-fb";
+function emoText(n, mode) {
+  if (mode === "system" || !n.parentElement || n.parentElement.closest(EMO_SKIP)) return;
+  const t = n.nodeValue; EMO_RE.lastIndex = 0; if (!EMO_RE.test(t)) return; EMO_RE.lastIndex = 0;
+  const frag = document.createDocumentFragment(); let last = 0, m;
+  while ((m = EMO_RE.exec(t))) { if (m.index > last) frag.append(t.slice(last, m.index)); frag.append(emoImg(m[0], mode)); last = m.index + m[0].length; }
+  if (last < t.length) frag.append(t.slice(last));
+  n.replaceWith(frag);
+}
+function emoProcess(node, mode) {
+  if (!node) return;
+  if (node.nodeType === 3) return emoText(node, mode);
+  if (node.nodeType !== 1 || (node.closest && node.closest(EMO_SKIP))) return;
+  if (mode === "system") {
+    node.querySelectorAll("img.emo-img").forEach(im => im.replaceWith(document.createTextNode(im.alt)));
+    if (node.matches("img.emo-img")) node.replaceWith(document.createTextNode(node.alt));
+    return;
+  }
+  const w = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, { acceptNode: x => x.parentElement && !x.parentElement.closest(EMO_SKIP) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT }), list = [];
+  while (w.nextNode()) list.push(w.currentNode);
+  list.forEach(x => emoText(x, mode));
+  node.querySelectorAll("img.emo-img").forEach(im => { if (im.dataset.m !== mode) { im.dataset.m = mode; im.dataset.i = "0"; im.src = emoSrc(mode, im.dataset.f.split(",")[0]); } });
+}
+const emoQ = new Set(); let emoT = 0;
+new MutationObserver(ms => {
+  if (emoMode() === "system") return;
+  ms.forEach(m => m.addedNodes.forEach(n => emoQ.add(n)));
+  if (!emoT) emoT = requestAnimationFrame(() => { emoT = 0; const q = [...emoQ]; emoQ.clear(); q.forEach(n => n.isConnected && emoProcess(n, emoMode())); });
+}).observe(document.body, { childList: true, subtree: true });
+function emoApply() { document.documentElement.dataset.emoji = emoMode(); emoProcess(document.body, emoMode()); }
+emoApply();
+
+/* ---------------- مشغّل الرسائل الصوتية (شكل تيليجرام) ---------------- */
+const fmtDur = s => { s = Math.max(0, Math.round(+s || 0)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+function vpBars(wf, seed) {
+  let a = Array.isArray(wf) && wf.length ? wf.slice(0, 48).map(x => Math.max(0, Math.min(31, +x || 0))) : null;
+  if (!a) { let h = (seed | 0) || 7; a = Array.from({ length: 36 }, () => { h = (h * 1103515245 + 12345) & 0x7fffffff; return 4 + (h % 22); }); }
+  return a.map(v => `<i style="height:${(3 + v / 31 * 21).toFixed(1)}px"></i>`).join("");
+}
+function voiceHtml(f) {
+  const data = String(f.data), src = `data:${f.type};base64,${data}`, dur = Math.min(600, Math.max(0, +f.dur || 0));
+  return `<div class="vp" data-vp data-src="${esc(src)}" data-dur="${dur}" data-k="${esc(data.length + ":" + data.slice(16, 40))}"><button type="button" class="vp-btn" aria-label="تشغيل">${ic("play", 22)}</button><div class="vp-body"><div class="vp-wave">${vpBars(f.wf, data.length)}</div><div class="vp-time">${dur ? fmtDur(dur) : "0:00"}</div></div></div>`;
+}
+let vpCur = null;
+function vpPaint(el, ratio, label) {
+  const bars = el.querySelectorAll(".vp-wave i"), n = Math.round(ratio * bars.length);
+  bars.forEach((b, i) => b.classList.toggle("on", i < n));
+  if (label != null) el.querySelector(".vp-time").textContent = label;
+}
+function vpReset(el) { if (!el) return; el.classList.remove("playing"); el.querySelector(".vp-btn").innerHTML = ic("play", 22); vpPaint(el, 0, fmtDur(el.dataset.dur)); }
+function vpClick(e, el) {
+  if (e.target.closest(".vp-wave") && vpCur && vpCur.el === el && isFinite(vpCur.au.duration) && vpCur.au.duration > 0) {
+    const r = el.querySelector(".vp-wave").getBoundingClientRect();
+    vpCur.au.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * vpCur.au.duration; return;
+  }
+  if (vpCur && vpCur.el === el) { if (vpCur.au.paused) vpCur.au.play().catch(() => {}); else vpCur.au.pause(); return; }
+  if (vpCur) { vpCur.au.pause(); vpReset(vpCur.el); vpCur = null; }
+  const au = new Audio(el.dataset.src); vpCur = { el, au };
+  const total = () => (isFinite(au.duration) && au.duration > 0 ? au.duration : +el.dataset.dur || 0);
+  const mine = () => vpCur && vpCur.au === au;
+  au.onplay = () => { if (mine()) { vpCur.el.classList.add("playing"); vpCur.el.querySelector(".vp-btn").innerHTML = ic("pause", 22); } };
+  au.onpause = () => { if (mine()) { vpCur.el.classList.remove("playing"); vpCur.el.querySelector(".vp-btn").innerHTML = ic("play", 22); } };
+  au.ontimeupdate = () => { if (!mine()) return; const t = total(); vpPaint(vpCur.el, t ? au.currentTime / t : 0, fmtDur(au.currentTime)); };
+  au.onended = () => { if (mine()) { vpReset(vpCur.el); vpCur = null; } };
+  au.onerror = () => { toast("تعذّر تشغيل الرسالة الصوتية"); if (mine()) { vpReset(vpCur.el); vpCur = null; } };
+  au.play().catch(() => toast("تعذّر تشغيل الرسالة الصوتية"));
+}
+
 function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 2600); }
 
 const badge = (u, s = 16) => u && u.verified
@@ -76,7 +189,7 @@ addEventListener("popstate", () => {
   if (ignorePop > 0) { ignorePop--; if (!ignorePop) deferred.splice(0).forEach(f => f()); return; }
   const l = LAYERS.pop(); if (l) l.close();
 });
-function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide"); }
+function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "att-sheet", "emo-sheet"); }
 function closeModal() {
   const was = !$("#modal").classList.contains("hidden"); modalDom();
   if (was) setTimeout(() => { if ($("#modal").classList.contains("hidden")) layerClose("modal"); }, 0);
@@ -84,7 +197,7 @@ function closeModal() {
 function openModal(html, wide = false) {
   const sh = $("#sheet");
   sh.classList.toggle("wide", wide);
-  sh.innerHTML = `<button class="x" id="xBtn" aria-label="إغلاق">✕</button>` + html;
+  sh.innerHTML = `<button class="x" id="xBtn" aria-label="إغلاق">${ic("close", 18)}</button>` + html;
   $("#modal").classList.remove("hidden"); layerOpen("modal", modalDom);
   $("#xBtn").onclick = closeModal;
   return sh;
@@ -496,6 +609,7 @@ function openSettings() {
     <div class="swatches">${ACCENTS.map(([k, c, t]) => `<button type="button" class="sw big ${LS.get("accent", "blue") === k ? "on" : ""}" data-acc="${k}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div>
     <div class="seg3">${WALLS.map(([k, t]) => `<button type="button" class="${LS.get("wp", "dots") === k ? "on" : ""}" data-wp="${k}">${t}</button>`).join("")}</div>
     <div class="panel-h">حجم الخط</div><div class="seg3">${[["s", "صغير"], ["m", "متوسط"], ["l", "كبير"]].map(([k, t]) => `<button type="button" class="${LS.get("fs", "m") === k ? "on" : ""}" data-fs="${k}">${t}</button>`).join("")}</div>
+    <div class="panel-h">شكل الإيموجي</div><div class="seg3">${EMO_STYLES.map(([k, t]) => `<button type="button" class="${emoMode() === k ? "on" : ""}" data-emo="${k}">${t}</button>`).join("")}</div><div class="emo-prev">😀 😍 👍 🔥 ❤️ 😂 🙏 🎉</div><div class="hint">آيفون وأندرويد/واتساب بيظهروا بنفس الشكل على كل الأجهزة (صور بتتحمّل من النت).</div>
     <div class="panel-h">التطبيق</div>
     ${switchRow("stLc", LS.get("lcards", true), "معاينة الروابط", "كارت لروابط الموقع (بروفايل/قناة/مجموعة) جوه الشات")}
     ${switchRow("stDens", LS.get("dens", "n") === "c", "الوضع المدمج", "مسافات أصغر عشان تشوف رسايل أكتر")}
@@ -516,6 +630,7 @@ function openSettings() {
   sh.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { LS.set("accent", b.dataset.acc); applyTheme(); sh.querySelectorAll("[data-acc]").forEach(x => x.classList.toggle("on", x === b)); });
   sh.querySelectorAll("[data-wp]").forEach(b => b.onclick = () => { LS.set("wp", b.dataset.wp); applyTheme(); sh.querySelectorAll("[data-wp]").forEach(x => x.classList.toggle("on", x === b)); });
   sh.querySelectorAll("[data-fs]").forEach(b => b.onclick = () => { LS.set("fs", b.dataset.fs); applyTheme(); sh.querySelectorAll("[data-fs]").forEach(x => x.classList.toggle("on", x === b)); });
+  sh.querySelectorAll("[data-emo]").forEach(b => b.onclick = () => { LS.set("emoji", b.dataset.emo); emoApply(); sh.querySelectorAll("[data-emo]").forEach(x => x.classList.toggle("on", x === b)); });
   q("#stNotif").onchange = async e => {
     if (e.target.checked) { const p = await enableNotifs(); if (p !== "granted") { e.target.checked = false; return; } LS.set("notifs", true); }
     else { LS.set("notifs", false); unregisterPush(); }
@@ -564,7 +679,7 @@ function siteChanged() {
 function paintAnn() {
   const bar = $("#annBar"), t = (S.site.announcement || "").trim();
   if (!t || LS.get("annHide", "") === t || S.view !== "app") { bar.classList.add("hidden"); return; }
-  bar.innerHTML = `<span>${esc(t)}</span><button aria-label="إخفاء">✕</button>`; bar.classList.remove("hidden");
+  bar.innerHTML = `<span>${esc(t)}</span><button aria-label="إخفاء">${ic("close", 16)}</button>`; bar.classList.remove("hidden");
   bar.querySelector("button").onclick = () => { LS.set("annHide", t); paintAnn(); };
 }
 function applyComposerState() {
@@ -583,7 +698,7 @@ function applyComposerState() {
   const locked = blocked || rdOnly || !!(c && c.type === "public" && S.site.publicOpen === false && !isOwner());
   $("#input").disabled = locked; $("#input").placeholder = blocked ? "المستخدم ده محظور" : rdOnly ? "الموقع في وضع القراءة فقط" : locked ? "الغرفة العامة مقفولة حاليًا" : "اكتب رسالة...";
   $("#attachBtn").disabled = locked; $("#input").maxLength = isOwner() ? 2000 : Math.min(2000, +S.site.maxLen || 2000);
-  $("#form .send").disabled = locked;
+  $("#sendMic").disabled = locked; $("#emojiBtn").disabled = locked;
 }
 
 /* ---------------- app shell ---------------- */
@@ -866,7 +981,7 @@ const chatPins = c => c && c.group ? groupPins(c.group) : (Array.isArray(c && c.
 function paintPin() {
   const b = $("#pinBar"), c = S.chat, ps = chatPins(c);
   if (!ps.length) { b.classList.add("hidden"); b.innerHTML = ""; return; }
-  b.innerHTML = ps.map((p, i) => `<button type="button" class="pin-item" data-pin="${esc(p.id)}"><span class="pin-i">📌</span><span><b>رسالة مثبتة ${ps.length > 1 ? i + 1 : ""}</b><small>${esc(p.t || "")}</small></span></button>`).join("");
+  b.innerHTML = ps.map((p, i) => `<button type="button" class="pin-item" data-pin="${esc(p.id)}"><span class="pin-i">${ic("pushpin", 16)}</span><span><b>رسالة مثبتة ${ps.length > 1 ? i + 1 : ""}</b><small>${esc(p.t || "")}</small></span></button>`).join("");
   b.classList.remove("hidden"); b.onclick = e => { const x = e.target.closest("[data-pin]"); if (x) jumpTo(x.dataset.pin); };
 }
 function paintHeadInner() {
@@ -997,8 +1112,8 @@ function renderMsgsPlain(docs) {
       if (m.fwd) body += `<div class="fwd">معاد توجيهها</div>`;
       if (m.reply) body += `<div class="quote" data-q="${esc(m.reply.id)}"><b>${esc(nameOf(m.reply.uid))}</b><span>${esc(m.reply.t)}</span></div>`;
       if (m.img && String(m.img).startsWith("data:image/")) body += `<img class="mimg" src="${esc(m.img)}" alt="صورة" data-img>`;
-      if (m.file && m.file.data && String(m.file.type || "").startsWith("audio/")) body += `<audio class="maudio" controls preload="metadata" src="data:${esc(m.file.type)};base64,${esc(m.file.data)}"></audio>`;
-      else if (m.file && m.file.data) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="data:${esc(m.file.type || "application/octet-stream")};base64,${esc(m.file.data)}">📎 <span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
+      if (m.file && m.file.data && String(m.file.type || "").startsWith("audio/")) body += voiceHtml(m.file);
+      else if (m.file && m.file.data) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="data:${esc(m.file.type || "application/octet-stream")};base64,${esc(m.file.data)}">${ic("file", 22)}<span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
       if (m.loc) body += `<a class="mloc" href="https://www.google.com/maps?q=${+m.loc.lat},${+m.loc.lng}" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg><span>موقع على الخريطة</span></a>`;
       if (shownText) body += `<div class="txt">${mentionHtml(shownText, c.type === "group" || c.type === "channel")}</div>`;
       if (shownText) body += linkCardHtml(shownText);
@@ -1006,7 +1121,7 @@ function renderMsgsPlain(docs) {
       if (m.poll && Array.isArray(m.poll.o)) {
         const vs = m.votes || {}, tot = Object.keys(vs).length, cn = m.poll.o.map(() => 0);
         for (const v of Object.values(vs)) if (cn[v] !== undefined) cn[v]++;
-        body += `<div class="poll"><div class="pq">📊 ${esc(m.poll.q)}</div>${m.poll.o.map((t, i) => `<button type="button" class="po ${vs[me] === i ? "mine" : ""}" data-vote="${i}"><span class="pb" style="width:${tot ? Math.round(cn[i] * 100 / tot) : 0}%"></span><span class="pt">${esc(t)}</span><b>${cn[i]}</b></button>`).join("")}<div class="pn">${tot} صوت</div></div>`;
+        body += `<div class="poll"><div class="pq">${ic("poll", 16)}${esc(m.poll.q)}</div>${m.poll.o.map((t, i) => `<button type="button" class="po ${vs[me] === i ? "mine" : ""}" data-vote="${i}"><span class="pb" style="width:${tot ? Math.round(cn[i] * 100 / tot) : 0}%"></span><span class="pt">${esc(t)}</span><b>${cn[i]}</b></button>`).join("")}<div class="pn">${tot} صوت</div></div>`;
       }
       if (m.reactions) {
         const cnt = {}; for (const [u, e] of Object.entries(m.reactions)) if (e) cnt[e] = (cnt[e] || 0) + 1;
@@ -1018,7 +1133,7 @@ function renderMsgsPlain(docs) {
     const tick = mine && c.peer && !m.deleted ? (S.me.readReceipts === false ? TK1 : seen ? TK2 : TK1) : "";
     h += `<div class="msg ${mine ? "me" : "them"}${cont ? " cont" : ""}${m.deleted ? " gone" : ""}" data-mid="${esc(d.id)}">`
       + (pub && !mine && !cont ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : "")
-      + body + `<div class="tm">${stars.has(c.id + "/" + d.id) ? `<span class="star">★</span>` : ""}<span>${fmtTime(dt)}</span>${tick}</div></div>`;
+      + body + `<div class="tm">${stars.has(c.id + "/" + d.id) ? `<span class="star">${ic("star", 11, "fill")}</span>` : ""}<span>${fmtTime(dt)}</span>${tick}</div></div>`;
   }
   if (c._h !== h) { c._h = h; box.innerHTML = h; hydrateLinkCards(); if (near) box.scrollTop = box.scrollHeight; }
   c.first = false;
@@ -1186,10 +1301,11 @@ function openForward(payload) {
 function paintReply() {
   const bar = $("#replyBar"), r = S.chat && S.chat.reply;
   if (!r) { bar.classList.add("hidden"); bar.innerHTML = ""; return; }
-  bar.innerHTML = `<div class="rp-t"><b>رد على ${esc(nameOf(r.uid))}</b><span>${esc(r.t)}</span></div><button type="button" id="rpX" aria-label="إلغاء">✕</button>`;
+  bar.innerHTML = `<div class="rp-t"><b>رد على ${esc(nameOf(r.uid))}</b><span>${esc(r.t)}</span></div><button type="button" id="rpX" aria-label="إلغاء">${ic("close", 16)}</button>`;
   bar.classList.remove("hidden"); $("#rpX").onclick = () => { S.chat.reply = null; paintReply(); };
 }
 $("#messages").addEventListener("click", e => {
+  const vpEl = e.target.closest("[data-vp]"); if (vpEl) return vpClick(e, vpEl);
   if (e.target.closest("#olderBtn")) return loadOlder();
   const w = e.target.closest("[data-uid]"); if (w) return openProfile(w.dataset.uid);
   const pv = e.target.closest("[data-vote]"); if (pv) { const mm = pv.closest("[data-mid]"); if (mm) voteTo(mm.dataset.mid, +pv.dataset.vote); return; }
@@ -1199,6 +1315,14 @@ $("#messages").addEventListener("click", e => {
 });
 let mT, mFired = false, mX = 0, mY = 0;
 const mBox = $("#messages");
+new MutationObserver(() => {
+  if (!vpCur || vpCur.el.isConnected) return;
+  const n = [...mBox.querySelectorAll("[data-vp]")].find(x => x.dataset.k === vpCur.el.dataset.k);
+  if (!n) { vpCur.au.pause(); vpCur = null; return; }
+  vpCur.el = n; const t = isFinite(vpCur.au.duration) && vpCur.au.duration > 0 ? vpCur.au.duration : +n.dataset.dur || 0;
+  vpPaint(n, t ? vpCur.au.currentTime / t : 0, fmtDur(vpCur.au.currentTime));
+  if (!vpCur.au.paused) { n.classList.add("playing"); n.querySelector(".vp-btn").innerHTML = ic("pause", 22); }
+}).observe(mBox, { childList: true, subtree: true });
 mBox.addEventListener("pointerdown", e => {
   const m = e.target.closest(".msg"); if (!m || !m.dataset.mid || e.target.closest("a")) return;
   mFired = false; mX = e.clientX; mY = e.clientY; clearTimeout(mT);
@@ -1419,7 +1543,7 @@ function quickSuggest() {
   pop.onclick = e => { const b = e.target.closest("[data-i]"); if (!b) return; $("#input").value = list[+b.dataset.i].t; hideQuick(); $("#input").focus(); };
 }
 $("#input").addEventListener("input", () => {
-  saveDraft();
+  saveDraft(); syncSendMic();
   quickSuggest();
   const c = S.chat; if (!c || !c.peer || !$("#input").value.trim() || (S.me && S.me.hideLastSeen)) return;
   if (Date.now() - c.sentTyping < 2500) return;
@@ -1458,35 +1582,68 @@ async function sendFile(file) {
   try { const raw = new Uint8Array(await file.arrayBuffer()); const data = btoa(String.fromCharCode(...raw)); await sendTo(S.chat, { file: { name: file.name.slice(0, 120), type: file.type || "application/octet-stream", bytes: file.size, data } }); toast("اتبعث الملف مشفّر"); }
   catch { toast("الملف ماتبعتش"); }
 }
-let voiceRecorder = null, voiceChunks = [], voiceTimer = 0, voiceStarted = 0;
-function setVoiceState(active) { const b = $("#voiceBtn"); if (!b) return; b.classList.toggle("recording", active); b.textContent = active ? "⏹" : "🎙"; b.title = active ? "إيقاف التسجيل" : "رسالة صوتية"; }
+let voiceRecorder = null, voiceChunks = [], voiceTimer = 0, voiceStarted = 0, voiceTick = 0, voiceCancel = false, voiceWf = [];
+function syncSendMic() {
+  const b = $("#sendMic"); if (!b) return;
+  const has = !!voiceRecorder || !!$("#input").value.trim();
+  b.classList.toggle("is-send", has); b.classList.toggle("is-mic", !has);
+  b.setAttribute("aria-label", voiceRecorder ? "إرسال التسجيل" : has ? "إرسال" : "تسجيل رسالة صوتية");
+}
+function setVoiceState(active) { $("#form").classList.toggle("recording", active); $("#recBar").classList.toggle("hidden", !active); syncSendMic(); }
 function bytesToB64(bytes) { let out = ""; for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(out); }
-async function finishVoice() {
+function vpDownsample(a, n = 40) {
+  if (!a.length) return null;
+  const out = []; let max = 0.001;
+  for (let i = 0; i < n; i++) { const s0 = Math.floor(i * a.length / n), e0 = Math.max(s0 + 1, Math.floor((i + 1) * a.length / n)); let m = 0; for (let j = s0; j < e0 && j < a.length; j++) m = Math.max(m, a[j]); out.push(m); max = Math.max(max, m); }
+  return out.map(v => Math.round(Math.min(1, v / max) * 31));
+}
+function finishVoice(cancel = false) {
   const r = voiceRecorder; if (!r) return;
-  voiceRecorder = null; clearTimeout(voiceTimer); setVoiceState(false);
+  voiceCancel = !!cancel; voiceRecorder = null; clearTimeout(voiceTimer); clearInterval(voiceTick); setVoiceState(false);
   try { if (r.state !== "inactive") r.stop(); } catch {}
 }
 async function startVoice() {
-  if (!S.chat || !S.chat.peer) return toast("الرسائل الصوتية المشفّرة متاحة حاليًا في الخاص فقط");
-  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("المتصفح لا يدعم تسجيل الصوت");
   if (voiceRecorder) return finishVoice();
+  const chat = S.chat;
+  if (!chat || !chat.peer) return toast("الرسائل الصوتية المشفّرة متاحة حاليًا في الخاص فقط");
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("المتصفح لا يدعم تسجيل الصوت");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
     const r = new MediaRecorder(stream, { mimeType: type, audioBitsPerSecond: 24000 });
-    voiceRecorder = r; voiceChunks = []; voiceStarted = Date.now(); setVoiceState(true); toast("جاري التسجيل — اضغط الزر للإيقاف (45 ثانية كحد أقصى)");
+    voiceRecorder = r; voiceChunks = []; voiceStarted = Date.now(); voiceCancel = false; voiceWf = [];
+    $("#recTime").textContent = "0:00"; setVoiceState(true);
+    let ctx = null, an = null, buf = null;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); an = ctx.createAnalyser(); an.fftSize = 512; ctx.createMediaStreamSource(stream).connect(an); buf = new Uint8Array(an.fftSize); } catch { ctx = null; an = null; }
+    voiceTick = setInterval(() => {
+      if (an) { an.getByteTimeDomainData(buf); let sum = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; } voiceWf.push(Math.sqrt(sum / buf.length)); }
+      const sec = Math.floor((Date.now() - voiceStarted) / 1000); $("#recTime").textContent = Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+    }, 100);
     r.ondataavailable = e => { if (e.data.size) voiceChunks.push(e.data); };
-    r.onerror = () => { stream.getTracks().forEach(t => t.stop()); voiceRecorder = null; setVoiceState(false); toast("تعذّر تسجيل الصوت"); };
+    r.onerror = () => { stream.getTracks().forEach(t => t.stop()); clearInterval(voiceTick); voiceRecorder = null; setVoiceState(false); toast("تعذّر تسجيل الصوت"); };
     r.onstop = async () => {
-      stream.getTracks().forEach(t => t.stop());
-      const blob = new Blob(voiceChunks, { type }); voiceChunks = [];
+      stream.getTracks().forEach(t => t.stop()); try { ctx && ctx.close(); } catch {}
+      const blob = new Blob(voiceChunks, { type }), dur = (Date.now() - voiceStarted) / 1000; voiceChunks = [];
+      if (voiceCancel) return;
+      if (dur < 0.7) return toast("التسجيل قصير جدًا");
       if (blob.size > 180 * 1024) return toast("التسجيل أكبر من 180 KB؛ قرّبه أو سجّل مدة أقصر");
-      try { const raw = new Uint8Array(await blob.arrayBuffer()); await sendTo(S.chat, { file: { name: "es-voice.webm", type, bytes: raw.byteLength, data: bytesToB64(raw) } }); toast("اتبعثت الرسالة الصوتية مشفّرة"); }
-      catch (e) { console.error(e); toast("الرسالة الصوتية ماتبعتتش"); }
+      try {
+        const raw = new Uint8Array(await blob.arrayBuffer()), wf = vpDownsample(voiceWf), file = { name: "es-voice.webm", type, bytes: raw.byteLength, data: bytesToB64(raw), dur: Math.round(dur) };
+        if (wf) file.wf = wf;
+        await sendTo(chat, { file }); toast("اتبعثت الرسالة الصوتية مشفّرة");
+      } catch (e) { console.error(e); toast("الرسالة الصوتية ماتبعتتش"); }
     };
     r.start(250); voiceTimer = setTimeout(() => finishVoice(), 45000);
   } catch (e) { console.error(e); setVoiceState(false); toast(e?.name === "NotAllowedError" ? "اسمح للموقع باستخدام الميكروفون" : "تعذّر تشغيل الميكروفون"); }
 }
+$("#sendMic").addEventListener("pointerdown", e => e.preventDefault());
+$("#sendMic").onclick = () => {
+  if (voiceRecorder) return finishVoice();
+  if ($("#input").value.trim()) return $("#form").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+  startVoice();
+};
+$("#recCancel").onclick = () => finishVoice(true);
+(() => { const inp = $("#input"), d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value"); Object.defineProperty(inp, "value", { get() { return d.get.call(this); }, set(v) { d.set.call(this, v); syncSendMic(); }, configurable: true }); })();
 const ES_STICKERS = [
   ["⚡", "طاقة ES"], ["👑", "ملك الشات"], ["🔥", "حماس"], ["💙", "قلب أزرق"],
   ["🚀", "انطلق"], ["🎯", "في الهدف"], ["😂", "ضحكة"], ["🤝", "اتفقنا"],
@@ -1510,7 +1667,7 @@ async function addCustomSticker(file) {
 function openStickerPicker() {
   if (!S.chat?.peer) return toast("الملصقات المشفّرة متاحة حاليًا في الخاص فقط");
   const items = stickerItems(), favs = stickerFavGet();
-  const tile = (x, i) => `<button type="button" class="sticker-pick ${favs.includes(x.id) ? "fav" : ""}" data-sticker="${i}"><i data-fav="${esc(x.id)}">${favs.includes(x.id) ? "★" : "☆"}</i>${x.img ? `<img src="${esc(x.img)}" alt="">` : `<span>${esc(x.emoji)}</span>`}<small>${esc(x.label)}</small></button>`;
+  const tile = (x, i) => `<button type="button" class="sticker-pick ${favs.includes(x.id) ? "fav" : ""}" data-sticker="${i}"><i data-fav="${esc(x.id)}">${favs.includes(x.id) ? ic("star", 16, "fill") : ic("star", 16)}</i>${x.img ? `<img src="${esc(x.img)}" alt="">` : `<span>${esc(x.emoji)}</span>`}<small>${esc(x.label)}</small></button>`;
   const favItems = items.filter(x => favs.includes(x.id));
   const sh = openModal(`<div class="menu"><div class="menu-h">ملصقات ES Chat Pro</div><div class="sticker-actions"><button type="button" class="btn-mini" id="addSticker">+ إضافة من الجهاز</button></div>${favItems.length ? `<div class="panel-h">المفضلة</div><div class="sticker-grid">${favItems.map((x, i) => tile(x, items.indexOf(x))).join("")}</div>` : ""}<div class="panel-h">كل الملصقات</div><div class="sticker-grid">${items.map(tile).join("")}</div><div class="hint">المفضلة والملصقات الشخصية محفوظة على جهازك، والملصق يُرسل مشفّرًا في الخاص.</div></div>`);
   sh.querySelector("#addSticker").onclick = () => $("#fileSticker").click();
@@ -1523,13 +1680,44 @@ $("#fileImg").onchange = e => { sendImage(e.target.files[0]); e.target.value = "
 $("#fileCam").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
 $("#fileDoc").onchange = e => { sendFile(e.target.files[0]); e.target.value = ""; };
 $("#fileSticker").onchange = e => { addCustomSticker(e.target.files[0]); e.target.value = ""; };
-$("#voiceBtn").onclick = startVoice;
+const EMO_GROUPS = [
+  ["الوجوه", "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👻 👽 🤖"],
+  ["الإيماءات", "👍 👎 👊 ✊ 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✌️ 🤞 🤟 🤘 👌 🤌 🤏 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 🤙 💪 🫶 🫡 ✍️"],
+  ["قلوب ورموز", "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💯 💢 💥 💫 💦 💨 🔥 ⭐ 🌟 ✨ ⚡ 🎉 🎊 🎯 🏆 👑 💎 🔔 📌 🔒 🔓 💡 ✅ ❌ ❓ ❗ 💬 👀"],
+  ["أشياء", "🚀 ✈️ 🚗 ⚽ 🏀 🎮 🎧 🎤 🎵 🎶 📱 💻 📷 🎁 🎈 ☕ 🍕 🍔 🍟 🍰 🍫 🌹 🌸 🌙 ☀️ 🌈 ☁️ 🐱 🐶 🦁 🐼"]
+];
+function openEmojiPanel() {
+  if ($("#input").disabled) return;
+  const stk = !!(S.chat && S.chat.peer);
+  const sh = openModal(`<div class="grab"></div><div class="emo-tabs"><button type="button" class="on" data-t="emo">الرموز التعبيرية</button>${stk ? `<button type="button" data-t="stk">الملصقات</button>` : ""}</div><div class="emo-scroll">${EMO_GROUPS.map(([t, g]) => `<div class="panel-h">${t}</div><div class="emo-grid">${g.split(" ").map(e => `<button type="button" data-e="${e}">${e}</button>`).join("")}</div>`).join("")}</div>`);
+  sh.classList.add("emo-sheet");
+  sh.querySelector(".emo-tabs").onclick = e => { const b = e.target.closest("[data-t]"); if (b && b.dataset.t === "stk") { closeModal(); openStickerPicker(); } };
+  sh.querySelector(".emo-scroll").onclick = e => {
+    const b = e.target.closest("[data-e]"); if (!b) return;
+    const inp = $("#input"), ch = b.dataset.e, v = inp.value, st = inp.selectionStart ?? v.length, en = inp.selectionEnd ?? st;
+    if (v.length - (en - st) + ch.length > inp.maxLength) return;
+    inp.value = v.slice(0, st) + ch + v.slice(en);
+    const p = st + ch.length; try { inp.setSelectionRange(p, p); } catch {}
+    inp.dispatchEvent(new Event("input"));
+  };
+}
+$("#emojiBtn").onclick = openEmojiPanel;
+$("#fileImg").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
+$("#fileCam").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
+$("#fileDoc").onchange = e => { sendFile(e.target.files[0]); e.target.value = ""; };
+$("#fileSticker").onchange = e => { addCustomSticker(e.target.files[0]); e.target.value = ""; };
 $("#attachBtn").onclick = () => {
   if (!S.chat || $("#input").disabled) return;
   const ST = S.site || {}, ow = isOwner(), okI = ow || ST.allowImages !== false, okF = ow || ST.allowFiles !== false, okL = ow || ST.allowLoc !== false, okP = ow || ST.allowPolls !== false;
-  const sh = openModal(`<div class="menu"><div class="menu-h">إرفاق</div>
-    ${S.chat.peer ? `<button class="mrow" data-a="sticker"><span>ملصقات ES Chat Pro</span></button>` : ""}${okI ? `<button class="mrow" data-a="img"><span>صورة من المعرض</span></button><button class="mrow" data-a="cam"><span>الكاميرا</span></button>` : ""}${S.chat.peer && okF ? `<button class="mrow" data-a="file"><span>ملف صغير مشفّر (حتى 180 KB)</span></button>` : ""}${okL ? `<button class="mrow" data-a="loc"><span>موقعي الحالي</span></button>` : ""}${okP ? `<button class="mrow" data-a="poll"><span>استفتاء</span></button>` : ""}</div>`);
-  sh.querySelector(".menu").onclick = e => {
+  const items = [];
+  if (okI) items.push(["img", "image", "المعرض", "#3b82f6,#1d4ed8"], ["cam", "camera", "الكاميرا", "#f43f5e,#be123c"]);
+  if (S.chat.peer && okF) items.push(["file", "file", "ملف", "#06b6d4,#0e7490"]);
+  if (okL) items.push(["loc", "pin", "الموقع", "#22c55e,#15803d"]);
+  if (okP) items.push(["poll", "poll", "استفتاء", "#f59e0b,#b45309"]);
+  if (S.chat.peer) items.push(["sticker", "sticker", "ملصقات", "#a855f7,#6d28d9"]);
+  const sh = openModal(`<div class="grab"></div><div class="att-title">إرفاق</div><div class="att-grid">${items.map(([a, i, t, g]) => `<button type="button" class="att" data-a="${a}"><span class="att-ic" style="background:linear-gradient(145deg,${g})">${ic(i, 26)}</span><b>${t}</b></button>`).join("")}</div>${S.chat.peer && okF ? `<div class="hint att-hint">الملفات المشفّرة حتى 180 KB</div>` : ""}`);
+  sh.classList.add("att-sheet");
+  sh.querySelector(".att-grid").onclick = e => {
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
     if (a === "sticker") openStickerPicker();
     else if (a === "poll") openPollMaker();
@@ -1724,7 +1912,7 @@ function openCreate(kind) {
       ht = setTimeout(async () => { try { const s = await getDoc(doc(db, "handles", v)); if (q("#cH").value.trim().toLowerCase() !== v) return; handleOk = !s.exists(); h.className = "hint " + (handleOk ? "ok" : "err"); h.textContent = handleOk ? "الاسم متاح ✓" : "الاسم ده مستخدم، جرّب غيره"; } catch { h.className = "hint err"; h.textContent = "تعذّر التحقق"; } }, 400);
     };
   } else {
-    const paintM = () => { q("#cMList").innerHTML = members.map(m => `<span class="m-chip" data-r="${esc(m.uid)}">${esc(m.u.name)} ✕</span>`).join(""); };
+    const paintM = () => { q("#cMList").innerHTML = members.map(m => `<span class="m-chip" data-r="${esc(m.uid)}">${esc(m.u.name)} ${ic("close", 11)}</span>`).join(""); };
     q("#cMList").onclick = e => { const c = e.target.closest("[data-r]"); if (c) { members = members.filter(m => m.uid !== c.dataset.r); paintM(); } };
     q("#cMAdd").onclick = async () => {
       const name = q("#cM").value.trim().toLowerCase().replace(/^@/, ""), h = q("#cMH"); h.className = "hint";
@@ -1926,7 +2114,7 @@ async function runPushCheck() {
   const sh = openModal(`<div class="menu"><div class="menu-h">فحص الإشعارات</div><div id="pcList"></div><div class="actions"><button class="btn-ghost" id="pcAgain">إعادة الفحص</button></div></div>`);
   sh.querySelector("#pcAgain").onclick = runPushCheck;
   const list = sh.querySelector("#pcList"), rows = [];
-  const step = (ok, t, d) => { rows.push(`<div class="pc ${ok ? "ok" : "bad"}"><b>${ok ? "✓" : "✗"}</b><div><span>${esc(t)}</span>${d ? `<small>${esc(d)}</small>` : ""}</div></div>`); list.innerHTML = rows.join(""); return ok; };
+  const step = (ok, t, d) => { rows.push(`<div class="pc ${ok ? "ok" : "bad"}"><b>${ok ? ic("check", 16) : ic("close", 16)}</b><div><span>${esc(t)}</span>${d ? `<small>${esc(d)}</small>` : ""}</div></div>`); list.innerHTML = rows.join(""); return ok; };
   if (!step("Notification" in window && "serviceWorker" in navigator && "PushManager" in window, "المتصفح بيدعم الإشعارات", "على الآيفون لازم تضيف الموقع للشاشة الرئيسية. على الأندرويد استخدم كروم.")) return;
   if (!step(Notification.permission === "granted", "إذن الإشعارات", Notification.permission === "granted" ? "" : "الإذن حاليًا: " + Notification.permission + ". فعّله من إعدادات الموقع في المتصفح.")) return;
   if (!step(VAPID_KEY.length > 40, "مفتاح VAPID في firebase-config.js", VAPID_KEY ? "" : "فاضي. انسخ المفتاح من Firebase ← Cloud Messaging ← Web Push certificates والصقه في VAPID_KEY.")) return;

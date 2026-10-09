@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
 
@@ -81,8 +81,8 @@
     <header class="chatbar" id="chatbar">
       <button class="back" id="back" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div id="chatHead" class="chat-head"></div>
-      <button class="icon-btn hidden" id="callAudioBtn" aria-label="مكالمة صوتية" title="مكالمة صوتية">☎</button>
-      <button class="icon-btn hidden" id="callVideoBtn" aria-label="مكالمة فيديو" title="مكالمة فيديو">▣</button>
+      <button class="icon-btn hidden" id="callAudioBtn" aria-label="مكالمة صوتية" title="مكالمة صوتية" data-ic="phone" data-s="22"></button>
+      <button class="icon-btn hidden" id="callVideoBtn" aria-label="مكالمة فيديو" title="مكالمة فيديو" data-ic="video" data-s="22"></button>
       <button class="icon-btn hidden" id="chatSearchBtn" aria-label="بحث في المحادثة"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <button class="icon-btn hidden" id="chatMenuBtn" aria-label="خيارات المحادثة"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="19" r="1.8" fill="currentColor"/></svg></button>
     </header>
@@ -93,10 +93,11 @@
       <div id="quickPop" class="quick-pop hidden"></div>
       <div id="roBar" class="ro-bar hidden"></div>
       <form class="composer" id="form">
-        <button type="button" class="attach" id="attachBtn" aria-label="إرفاق"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6L15 7.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button type="button" class="attach" id="attachBtn" aria-label="إرفاق" data-ic="attach" data-s="24"></button>
         <input id="input" placeholder="اكتب رسالة..." autocomplete="off" maxlength="2000">
-        <button type="button" class="voice" id="voiceBtn" aria-label="رسالة صوتية" title="رسالة صوتية">🎙</button>
-        <button class="send" aria-label="إرسال"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 11.5 21 3l-8.5 18-2-7.5L3 11.5z" fill="currentColor"/></svg></button>
+        <button type="button" class="emoji-btn" id="emojiBtn" aria-label="رموز تعبيرية" data-ic="smile" data-s="24"></button>
+        <div class="recbar hidden" id="recBar"><i class="rec-dot"></i><b id="recTime">0:00</b><span>جاري التسجيل…</span><button type="button" class="rec-cancel" id="recCancel" aria-label="إلغاء التسجيل" data-ic="trash" data-s="20"></button></div>
+        <button type="button" class="sendmic is-mic" id="sendMic" aria-label="تسجيل رسالة صوتية"><span class="i-mic" data-ic="mic" data-s="24"></span><span class="i-send" data-ic="send" data-s="22"></span></button>
       </form>
     </div>
   </main>
@@ -122,7 +123,7 @@
   }, 8000);
 </script>
 <script type="module">
-  import("./app.js?v=29").catch(err => {
+  import("./app.js?v=30").catch(err => {
     const e = document.getElementById("bootError");
     if (e) {
       e.hidden = false;
