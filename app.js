@@ -30,6 +30,39 @@ const LS = {
   get: (k, d) => { try { const v = localStorage.getItem("es_" + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem("es_" + k, JSON.stringify(v)); } catch {} },
 };
+/* معاينة آخر رسالة في المحادثات الخاصة (بتتفك على الجهاز لأن النص المخزّن مشفّر) */
+const PREV = new Map(), PVBUSY = new Set();
+const previewOf = p => !p ? "" : p.poll ? "📊 " + p.poll.q : p.img ? "📷 صورة" : p.file ? (String(p.file.type || "").startsWith("audio/") ? "🎤 رسالة صوتية" : "📎 ملف") : p.sticker ? ((p.sticker.emoji || "🎨") + " ملصق") : p.loc ? "📍 موقع" : (p.text || "");
+const lastMsOf = c => (toDate(c.lastAt) || { getTime: () => 0 }).getTime();
+function dmPrev(c) {
+  const t = String(c.lastText || ""); if (!t.startsWith("🔒")) return t;
+  const e = PREV.get(c.id), ms = lastMsOf(c);
+  if (e && (e.ms === ms || e.ms === -1)) return e.t;
+  return ms ? "🔒 رسالة" : "🔒 جاري التحميل…";
+}
+async function loadDmPreview(c, ms) {
+  const k = c.id + "|" + ms; if (PVBUSY.has(k)) return; PVBUSY.add(k);
+  try {
+    const s = await getDocs(query(collection(db, "chats", c.id, "messages"), orderBy("at", "desc"), limit(1)));
+    const d = s.docs[0]; if (!d) return; const raw = d.data(); let t = "";
+    if (raw.deleted) t = "🚫 الرسالة اتحذفت";
+    else if (raw.cipher) { try { t = previewOf(await decryptPrivatePayload(S.user.uid, raw.cipher)); } catch { t = "🔒 رسالة"; } }
+    else t = previewOf(raw);
+    PREV.set(c.id, { ms, t: (t || "🔒 رسالة").slice(0, 80) });
+    const l = $("#list"); if (l) l._h = ""; renderList();
+  } catch (e) { PREV.set(c.id, { ms, t: "🔒 رسالة" }); }
+  finally { PVBUSY.delete(k); }
+}
+function ensureDmPreviews(chats) {
+  let n = 0;
+  for (const c of chats) {
+    if (c._t !== "dm" || !String(c.lastText || "").startsWith("🔒")) continue;
+    const ms = lastMsOf(c); if (!ms) continue; if (++n > 25) break;
+    const e = PREV.get(c.id); if (e && e.ms === ms) continue;
+    loadDmPreview(c, ms);
+  }
+}
+
 const dayKey = (d = new Date()) => "d_" + d.toLocaleDateString("en-CA");
 const toDate = t => (t && t.toDate ? t.toDate() : null);
 const fmtDT = t => { const d = toDate(t); return d ? d.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" }) : "—"; };
@@ -313,13 +346,23 @@ async function onAuth(user) {
       setDoc(doc(db, "users", user.uid, "private", "account"), { uid: user.uid, email: user.email || "" }, { merge: true }).catch(() => {});
       if (owner && (!d.verified || d.role !== "owner")) updateDoc(ref, { verified: true, role: "owner" }).catch(() => {});
     }
-    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); setDoc(doc(db, "users", user.uid, "public", "profile"), { verified: !!S.me?.verified }, { merge: true }).catch(() => {}); route(); }, e => fail(e));
-    setDoc(doc(db, "users", user.uid, "public", "profile"), { uid: user.uid, name: (user.displayName || "مستخدم").slice(0, 40), photo: "", gender: "male", bio: "", username: "", verified: !!S.me?.verified, hideLastSeen: false, lastSeen: serverTimestamp() }, { merge: true }).catch(() => {});
+    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); syncPublicProfile(user.uid); route(); }, e => fail(e));
   } catch (e) {
     await fail(e);
   }
 }
 
+/* البروفايل العام (اللي بيشوفه الناس) بيتزامن من مستند المستخدم نفسه. قبل كده كان بيتصفّر مع كل دخول (الصورة واليوزر والنبذة). */
+let pubSig = "";
+function syncPublicProfile(uid) {
+  const m = S.me; if (!m) return;
+  const patch = { uid, verified: !!m.verified };
+  for (const k of ["name", "photo", "gender", "bio", "username"]) if (typeof m[k] === "string") patch[k] = m[k];
+  if (m.hideLastSeen) patch.hideLastSeen = true;
+  const sig = JSON.stringify(patch).length + "|" + (patch.photo || "").length + "|" + (patch.username || "") + "|" + (patch.name || "") + "|" + (patch.bio || "") + "|" + (patch.verified ? 1 : 0) + "|" + (m.hideLastSeen ? 1 : 0);
+  if (sig === pubSig) return; pubSig = sig;
+  setDoc(doc(db, "users", uid, "public", "profile"), patch, { merge: true }).catch(e => console.warn("public profile sync", e));
+}
 function route() {
   const me = S.me; if (!me) return;
   if (me.banned && !isOwner()) { show("banned"); return; }
@@ -589,79 +632,213 @@ const ACCENTS = [["blue", "#2f6bff", "أزرق"], ["violet", "#8b5cf6", "بنف�
 const WALLS = [["dots", "نقط"], ["grid", "شبكة"], ["none", "سادة"]];
 function applyTheme() { const r = document.documentElement; r.dataset.accent = LS.get("accent", "blue"); r.dataset.wp = LS.get("wp", "dots"); r.dataset.fs = LS.get("fs", "m"); r.dataset.dens = LS.get("dens", "n"); r.dataset.motion = LS.get("motion", true) ? "on" : "off"; }
 applyTheme();
-function openSettings() {
-  const me = S.me, perm = canNotify() ? Notification.permission : "unsupported";
-  const link = `${location.origin}${location.pathname}?u=${me.username || ""}`;
-  const note = perm === "denied" ? `<div class="hint err">الإشعارات مقفولة للموقع ده من إعدادات المتصفح. افتح إعدادات الموقع وفعّلها.</div>`
-    : perm === "unsupported" ? `<div class="hint">المتصفح ده مش بيدعم الإشعارات. على الآيفون ضيف الموقع للشاشة الرئيسية الأول.</div>` : "";
-  const sh = openModal(`<div class="prof" style="padding-top:6px">${avatar(me)}<h3>${esc(me.name)}${badge(me, 20)}</h3><div class="un"><bdi>@${esc(me.username || "")}</bdi></div></div>
-    <div class="actions"><button class="btn-primary" id="stEdit">تعديل البروفايل</button><button class="btn-ghost" id="stLink">مشاركة رابط بروفايلك</button></div>
-    <div class="panel-h">الإشعارات</div>${note}
-    ${switchRow("stNotif", prefs.notifs && perm === "granted", "إشعارات الرسائل", "تنبيه لما حد يبعتلك")}
-    ${switchRow("stSound", prefs.sound, "صوت التنبيه")}
-    ${switchRow("stPrev", prefs.preview, "إظهار نص الرسالة", "لو اتقفل هيظهر «رسالة جديدة» بس")}
-    <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="stTest">جرّب إشعار</button><button class="btn-ghost" id="stCheck">فحص الإشعارات</button></div>
-    <div class="panel-h">الخصوصية</div>
-    ${switchRow("stHide", !!me.hideLastSeen, "إخفاء حالتي", "محدش هيشوف إنك متصل أو آخر ظهور أو إنك بتكتب")}
-    ${switchRow("stRR", me.readReceipts !== false, "تأكيد القراءة (✓✓)", "لو قفلته محدش هيعرف إنك قريت، وإنت كمان مش هتشوف إن اتقرت رسايلك")}
-    ${switchRow("stNoAdd", me.noAdd === true, "منع إضافتي للمجموعات", "محدش يقدر يضيفك لمجموعة بدون ما تنضم بنفسك بالرابط")}
-    <div class="panel-h">المظهر</div>
-    <div class="swatches">${ACCENTS.map(([k, c, t]) => `<button type="button" class="sw big ${LS.get("accent", "blue") === k ? "on" : ""}" data-acc="${k}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div>
-    <div class="seg3">${WALLS.map(([k, t]) => `<button type="button" class="${LS.get("wp", "dots") === k ? "on" : ""}" data-wp="${k}">${t}</button>`).join("")}</div>
-    <div class="panel-h">حجم الخط</div><div class="seg3">${[["s", "صغير"], ["m", "متوسط"], ["l", "كبير"]].map(([k, t]) => `<button type="button" class="${LS.get("fs", "m") === k ? "on" : ""}" data-fs="${k}">${t}</button>`).join("")}</div>
-    <div class="panel-h">شكل الإيموجي</div><div class="seg3">${EMO_STYLES.map(([k, t]) => `<button type="button" class="${emoMode() === k ? "on" : ""}" data-emo="${k}">${t}</button>`).join("")}</div><div class="emo-prev">😀 😍 👍 🔥 ❤️ 😂 🙏 🎉</div><div class="hint">آيفون وأندرويد/واتساب بيظهروا بنفس الشكل على كل الأجهزة (صور بتتحمّل من النت).</div>
-    <div class="panel-h">التطبيق</div>
-    ${switchRow("stLc", LS.get("lcards", true), "معاينة الروابط", "كارت لروابط الموقع (بروفايل/قناة/مجموعة) جوه الشات")}
-    ${switchRow("stDens", LS.get("dens", "n") === "c", "الوضع المدمج", "مسافات أصغر عشان تشوف رسايل أكتر")}
-    ${switchRow("stMotion", LS.get("motion", true), "الحركات والانتقالات", "قفلها لو الجهاز بطيء")}
-    ${switchRow("stH24", LS.get("h24", false), "الوقت 24 ساعة")}
-    ${switchRow("stQuiet", LS.get("quiet", false), "ساعات الهدوء", "بيوقف صوت وإشعارات الموقع في الوقت ده")}
-    <div class="field qrow"><label for="stQf">من</label><input type="time" id="stQf" value="${esc(LS.get("qFrom", "23:00"))}"><label for="stQt">إلى</label><input type="time" id="stQt" value="${esc(LS.get("qTo", "07:00"))}"></div>
-    <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="stReload">إعادة تحميل التطبيق</button></div>
-    <div class="panel-h">أدوات الأعمال</div>
-    <div class="menu" style="padding:0"><button class="mrow" id="stLbl"><span>مجلدات الدردشة</span><small>${S.prefs.labels.length}</small></button>
-      <button class="mrow" id="stQr"><span>الردود السريعة</span><small>${S.prefs.quick.length}</small></button>
-      <button class="mrow" id="stStar"><span>الرسائل المميزة</span><small>${S.prefs.stars.length}</small></button></div>
-    <div class="actions" style="margin-top:22px"><button class="btn-ghost" id="stOut">تسجيل الخروج</button></div>`);
-  const q = id => sh.querySelector(id);
-  q("#stEdit").onclick = openEdit; q("#stOut").onclick = doSignOut;
-  q("#stLink").onclick = () => shareOrCopy(link, me.name || "ES Chat Pro", "اتنسخ الرابط");
-  q("#stLbl").onclick = manageLabels; q("#stQr").onclick = manageQuick; q("#stStar").onclick = openStars;
-  sh.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { LS.set("accent", b.dataset.acc); applyTheme(); sh.querySelectorAll("[data-acc]").forEach(x => x.classList.toggle("on", x === b)); });
-  sh.querySelectorAll("[data-wp]").forEach(b => b.onclick = () => { LS.set("wp", b.dataset.wp); applyTheme(); sh.querySelectorAll("[data-wp]").forEach(x => x.classList.toggle("on", x === b)); });
-  sh.querySelectorAll("[data-fs]").forEach(b => b.onclick = () => { LS.set("fs", b.dataset.fs); applyTheme(); sh.querySelectorAll("[data-fs]").forEach(x => x.classList.toggle("on", x === b)); });
-  sh.querySelectorAll("[data-emo]").forEach(b => b.onclick = () => { LS.set("emoji", b.dataset.emo); emoApply(); sh.querySelectorAll("[data-emo]").forEach(x => x.classList.toggle("on", x === b)); });
-  q("#stNotif").onchange = async e => {
-    if (e.target.checked) { const p = await enableNotifs(); if (p !== "granted") { e.target.checked = false; return; } LS.set("notifs", true); }
-    else { LS.set("notifs", false); unregisterPush(); }
-  };
-  q("#stSound").onchange = e => { LS.set("sound", e.target.checked); if (e.target.checked) beep(); };
-  q("#stPrev").onchange = e => LS.set("preview", e.target.checked);
-  const redraw = () => { if (S.chat) { S.chat._h = ""; if (S.chat.lastDocs) renderMsgs(S.chat.lastDocs); } const l = $("#list"); if (l) l._h = ""; renderList(); };
-  q("#stLc").onchange = e => { LS.set("lcards", e.target.checked); redraw(); };
-  q("#stDens").onchange = e => { LS.set("dens", e.target.checked ? "c" : "n"); applyTheme(); };
-  q("#stMotion").onchange = e => { LS.set("motion", e.target.checked); applyTheme(); };
-  q("#stH24").onchange = e => { LS.set("h24", e.target.checked); redraw(); };
-  q("#stQuiet").onchange = e => { LS.set("quiet", e.target.checked); toast(e.target.checked ? "ساعات الهدوء شغالة" : "ساعات الهدوء مقفولة"); };
-  q("#stQf").onchange = e => LS.set("qFrom", e.target.value || "23:00");
-  q("#stQt").onchange = e => LS.set("qTo", e.target.value || "07:00");
-  q("#stReload").onclick = () => location.reload();
-  q("#stCheck").onclick = runPushCheck;
-  q("#stTest").onclick = async () => { if (Notification.permission !== "granted") { await enableNotifs(); } showNotif("ES Chat Pro", "ده إشعار تجريبي", "test"); beep(); };
-  q("#stHide").onchange = async e => {
-    const on = e.target.checked;
-    try { await updateDoc(doc(db, "users", S.user.uid), on ? { hideLastSeen: true, lastSeen: deleteField() } : { hideLastSeen: false }); await updateDoc(doc(db, "users", S.user.uid, "public", "profile"), on ? { hideLastSeen: true, lastSeen: deleteField() } : { hideLastSeen: false }); if (!on) setTimeout(beat, 300); toast(on ? "حالتك مخفية" : "حالتك ظاهرة"); }
-    catch { e.target.checked = !on; toast("تعذّر الحفظ"); }
-  };
-  q("#stNoAdd").onchange = async e => {
-    try { await updateDoc(doc(db, "users", S.user.uid), { noAdd: e.target.checked }); toast(e.target.checked ? "محدش هيقدر يضيفك" : "ممكن يضيفوك"); }
-    catch { e.target.checked = !e.target.checked; toast("تعذّر الحفظ"); }
-  };
-  q("#stRR").onchange = async e => {
-    try { await updateDoc(doc(db, "users", S.user.uid), { readReceipts: e.target.checked }); toast(e.target.checked ? "تأكيد القراءة شغال" : "تأكيد القراءة مقفول"); }
-    catch { e.target.checked = !e.target.checked; toast("تعذّر الحفظ"); }
-  };
+/* ---------------- الإعدادات (تاب بشكل تيليجرام) ---------------- */
+const SPI = {
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  chat: '<path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-5.4A8 8 0 1 1 21 12z"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16 7l3 3"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 0 0 4 0"/>',
+  data: '<path d="M21 12A9 9 0 1 1 12 3v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  laptop: '<rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 20h20"/>',
+  battery: '<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M22 11v2"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  ask: '<path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-5.4A8 8 0 1 1 21 12z"/><path d="M8.5 12h.01M12 12h.01M15.5 12h.01" stroke-width="2.6"/>',
+  faq: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/>',
+  bulb: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
+  shield: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',
+  crown: '<path d="M3 18h18l-1.5-9-4.5 4-3-6-3 6-4.5-4z"/>',
+  out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/>'
+};
+const spIc = (k, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${SPI[k] || ""}</svg>`;
+const spRow = (key, icon, color, title, sub) => `<button type="button" class="sp-row" data-sp="${key}"><span class="sp-ic" style="background:${color}">${spIc(icon)}</span><span class="sp-t"><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span></button>`;
+function renderSettingsPage() {
+  const el = $("#settingsPage"), me = S.me; if (!el || !me) return;
+  const nBlock = S.prefs.block.length, nLbl = S.prefs.labels.length;
+  const h = `<div class="sp-top"><h2>الإعدادات</h2></div>
+    <div class="sp-profile"><button type="button" class="sp-av" data-sp="account" aria-label="الحساب">${avatar(me)}<span class="sp-cam">${spIc("camera", 18)}</span></button>
+      <h3>${esc(me.name || "")}${badge(me, 20)}</h3><div class="sp-un"><bdi>@${esc(me.username || "")}</bdi></div></div>
+    <div class="sp-card"><div class="sp-h">الحسابات</div>
+      <button type="button" class="sp-row" data-sp="account"><span class="sp-ic sp-ic-av">${avatar(me)}</span><span class="sp-t"><b>${esc(me.name || "")}</b><small>الحساب الحالي</small></span></button>
+      <button type="button" class="sp-row" data-sp="logout"><span class="sp-ic" style="background:#ef4444">${spIc("out")}</span><span class="sp-t"><b>تسجيل الخروج</b></span></button></div>
+    <div class="sp-card">
+      ${spRow("account", "user", "#2f9bff", "الحساب", "الاسم، اليوزر، النبذة")}
+      ${spRow("chats", "chat", "#f59e0b", "إعدادات المحادثات", "الخلفية، الألوان، حجم الخط")}
+      ${spRow("privacy", "key", "#22c55e", "الخصوصية والأمان", "آخر ظهور، التشفير، المحظورين" + (nBlock ? " (" + nBlock + ")" : ""))}
+      ${spRow("notif", "bell", "#ef4444", "الإشعارات", "الأصوات، المعاينة، ساعات الهدوء")}
+      ${spRow("data", "data", "#3b82f6", "البيانات والتخزين", "التخزين المؤقت وإعادة التحميل")}
+      ${spRow("folders", "folder", "#38bdf8", "مجلدات المحادثات", nLbl ? nLbl + " مجلد" : "فرز المحادثات في مجلدات")}
+      ${spRow("devices", "laptop", "#14b8a6", "الأجهزة", "هذا الجهاز ومفاتيح التشفير")}
+      ${spRow("power", "battery", "#fb923c", "توفير الطاقة", "تقليل الحركات والمؤثرات")}
+      ${spRow("lang", "globe", "#a855f7", "اللغة", "العربية")}</div>
+    <div class="sp-card">
+      ${spRow("stars", "star", "#f59e0b", "الرسائل المميزة", S.prefs.stars.length ? S.prefs.stars.length + " رسالة" : "")}
+      ${spRow("quick", "bolt", "#8b5cf6", "الردود السريعة", S.prefs.quick.length ? S.prefs.quick.length + " رد" : "اكتب / في أي شات")}
+      ${isOwner() ? spRow("owner", "crown", "#eab308", "لوحة المالك", "إدارة الموقع والمستخدمين") : ""}</div>
+    <div class="sp-card"><div class="sp-h">مساعدة</div>
+      ${spRow("ask", "ask", "#f59e0b", "اسأل سؤالًا", "راسل صاحب الموقع")}
+      ${spRow("faq", "faq", "#3b82f6", "الأسئلة الشائعة")}
+      ${spRow("features", "bulb", "#a855f7", "ميزات ES Chat Pro")}
+      ${spRow("policy", "shield", "#22c55e", "سياسة الخصوصية")}</div>
+    <div class="sp-ver">ES Chat Pro</div>`;
+  if (el._h !== h) { el._h = h; el.innerHTML = h; }
+  if (!el._bound) { el._bound = true; el.addEventListener("click", e => { const b = e.target.closest("[data-sp]"); if (b) spOpen(b.dataset.sp); }); }
 }
+function spSheet(title, body) {
+  const sh = openModal(`<div class="sp-sub-h"><button type="button" class="sp-back" id="spBack" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><b>${title}</b></div>` + body);
+  sh.classList.add("sp-sheet"); sh.querySelector("#spBack").onclick = closeModal; return sh;
+}
+const spSeg = (attr, cur, list) => `<div class="seg3">${list.map(([k, t]) => `<button type="button" class="${cur === k ? "on" : ""}" data-${attr}="${k}">${t}</button>`).join("")}</div>`;
+function spOpen(k) {
+  const me = S.me; if (!me) return;
+  const link = `${location.origin}${location.pathname}?u=${me.username || ""}`;
+  if (k === "logout") { if (confirm("تسجّل خروج؟")) doSignOut(); return; }
+  if (k === "folders") return manageLabels();
+  if (k === "stars") return openStars();
+  if (k === "quick") return manageQuick();
+  if (k === "owner") return typeof openOwner === "function" ? openOwner() : toast("لوحة المالك مش متاحة");
+  if (k === "ask") { location.href = "mailto:" + OWNER_EMAIL + "?subject=" + encodeURIComponent("سؤال عن ES Chat Pro"); return; }
+  if (k === "account") {
+    const sh = spSheet("الحساب", `<div class="prof">${avatar(me)}<h3>${esc(me.name)}${badge(me, 20)}</h3><div class="un"><bdi>@${esc(me.username || "")}</bdi></div></div>
+      ${me.bio ? `<div class="sp-info"><small>النبذة</small><div>${esc(me.bio)}</div></div>` : ""}
+      <div class="sp-info"><small>الإيميل</small><div dir="ltr">${esc((S.user && S.user.email) || "")}</div></div>
+      <div class="actions"><button class="btn-primary" id="spEdit">تعديل البروفايل والصورة</button><button class="btn-ghost" id="spLink">مشاركة رابط بروفايلك</button></div>
+      <div class="actions" style="margin-top:22px"><button class="btn-ghost" id="spOut">تسجيل الخروج</button></div>`);
+    sh.querySelector("#spEdit").onclick = openEdit; sh.querySelector("#spOut").onclick = doSignOut;
+    sh.querySelector("#spLink").onclick = () => shareOrCopy(link, me.name || "ES Chat Pro", "اتنسخ الرابط");
+    return;
+  }
+  if (k === "chats") {
+    const sh = spSheet("إعدادات المحادثات", `<div class="panel-h">اللون الأساسي</div>
+      <div class="swatches">${ACCENTS.map(([a, c, t]) => `<button type="button" class="sw big ${LS.get("accent", "blue") === a ? "on" : ""}" data-acc="${a}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div>
+      <div class="panel-h">خلفية الشاشة</div>${spSeg("wp", LS.get("wp", "dots"), WALLS)}
+      <div class="panel-h">حجم الخط</div>${spSeg("fs", LS.get("fs", "m"), [["s", "صغير"], ["m", "متوسط"], ["l", "كبير"]])}
+      <div class="panel-h">شكل الإيموجي</div>${spSeg("emo", emoMode(), EMO_STYLES)}<div class="emo-prev">😀 😍 👍 🔥 ❤️ 😂 🙏 🎉</div>
+      <div class="panel-h">المحادثات</div>
+      ${switchRow("stLc", LS.get("lcards", true), "معاينة الروابط", "كارت لروابط الموقع (بروفايل/قناة/مجموعة) جوه الشات")}
+      ${switchRow("stDens", LS.get("dens", "n") === "c", "الوضع المدمج", "مسافات أصغر عشان تشوف رسايل أكتر")}
+      ${switchRow("stMotion", LS.get("motion", true), "المؤثرات الحركية", "قفلها لو الجهاز بطيء")}
+      ${switchRow("stH24", LS.get("h24", false), "الوقت 24 ساعة")}`);
+    const redraw = () => { if (S.chat) { S.chat._h = ""; if (S.chat.lastDocs) renderMsgs(S.chat.lastDocs); } const l = $("#list"); if (l) l._h = ""; renderList(); };
+    const mark = (attr, b) => sh.querySelectorAll(`[data-${attr}]`).forEach(x => x.classList.toggle("on", x === b));
+    sh.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { LS.set("accent", b.dataset.acc); applyTheme(); mark("acc", b); });
+    sh.querySelectorAll("[data-wp]").forEach(b => b.onclick = () => { LS.set("wp", b.dataset.wp); applyTheme(); mark("wp", b); });
+    sh.querySelectorAll("[data-fs]").forEach(b => b.onclick = () => { LS.set("fs", b.dataset.fs); applyTheme(); mark("fs", b); });
+    sh.querySelectorAll("[data-emo]").forEach(b => b.onclick = () => { LS.set("emoji", b.dataset.emo); emoApply(); mark("emo", b); });
+    sh.querySelector("#stLc").onchange = e => { LS.set("lcards", e.target.checked); redraw(); };
+    sh.querySelector("#stDens").onchange = e => { LS.set("dens", e.target.checked ? "c" : "n"); applyTheme(); };
+    sh.querySelector("#stMotion").onchange = e => { LS.set("motion", e.target.checked); applyTheme(); };
+    sh.querySelector("#stH24").onchange = e => { LS.set("h24", e.target.checked); redraw(); };
+    return;
+  }
+  if (k === "privacy") {
+    const blocked = S.prefs.block;
+    const sh = spSheet("الخصوصية والأمان", `
+      ${switchRow("stHide", !!me.hideLastSeen, "إخفاء حالتي", "محدش هيشوف إنك متصل أو آخر ظهور أو إنك بتكتب")}
+      ${switchRow("stRR", me.readReceipts !== false, "تأكيد القراءة (✓✓)", "لو قفلته محدش هيعرف إنك قريت، وإنت كمان مش هتشوف إن اتقرت رسايلك")}
+      ${switchRow("stNoAdd", me.noAdd === true, "منع إضافتي للمجموعات", "محدش يقدر يضيفك لمجموعة بدون ما تنضم بنفسك بالرابط")}
+      <div class="panel-h">التشفير</div>
+      <div class="sp-info"><small>المحادثات الخاصة</small><div>${S.e2ee && S.e2ee.ready ? "🔒 مشفّرة من طرف لطرف على هذا الجهاز" : "⚠️ مفتاح التشفير غير جاهز على هذا الجهاز"}</div></div>
+      <div class="hint">المجموعات والقنوات والغرفة العامة مش مشفّرة من طرف لطرف.</div>
+      <div class="panel-h">المحظورون (${blocked.length})</div>
+      <div id="spBlk">${blocked.length ? blocked.map(u => `<div class="mrow static"><span class="sp-blk-n" data-bu="${esc(u)}">…</span><button class="btn-danger sm" data-unb="${esc(u)}">إلغاء الحظر</button></div>`).join("") : `<div class="hint">مفيش حد محظور.</div>`}</div>`);
+    sh.querySelectorAll("[data-bu]").forEach(async el => { const u = await getUser(el.dataset.bu); el.textContent = (u && u.name) || "مستخدم"; });
+    sh.querySelectorAll("[data-unb]").forEach(b => b.onclick = () => { savePrefs({ block: S.prefs.block.filter(x => x !== b.dataset.unb) }); b.closest(".mrow").remove(); toast("اتلغى الحظر"); });
+    sh.querySelector("#stHide").onchange = async e => {
+      const on = e.target.checked;
+      try { await updateDoc(doc(db, "users", S.user.uid), on ? { hideLastSeen: true, lastSeen: deleteField() } : { hideLastSeen: false }); await updateDoc(doc(db, "users", S.user.uid, "public", "profile"), on ? { hideLastSeen: true, lastSeen: deleteField() } : { hideLastSeen: false }); if (!on) setTimeout(beat, 300); toast(on ? "حالتك مخفية" : "حالتك ظاهرة"); }
+      catch { e.target.checked = !on; toast("تعذّر الحفظ"); }
+    };
+    sh.querySelector("#stNoAdd").onchange = async e => { try { await updateDoc(doc(db, "users", S.user.uid), { noAdd: e.target.checked }); toast(e.target.checked ? "محدش هيقدر يضيفك" : "ممكن يضيفوك"); } catch { e.target.checked = !e.target.checked; toast("تعذّر الحفظ"); } };
+    sh.querySelector("#stRR").onchange = async e => { try { await updateDoc(doc(db, "users", S.user.uid), { readReceipts: e.target.checked }); toast(e.target.checked ? "تأكيد القراءة شغال" : "تأكيد القراءة مقفول"); } catch { e.target.checked = !e.target.checked; toast("تعذّر الحفظ"); } };
+    return;
+  }
+  if (k === "notif") {
+    const perm = canNotify() ? Notification.permission : "unsupported";
+    const note = perm === "denied" ? `<div class="hint err">الإشعارات مقفولة للموقع ده من إعدادات المتصفح. افتح إعدادات الموقع وفعّلها.</div>`
+      : perm === "unsupported" ? `<div class="hint">المتصفح ده مش بيدعم الإشعارات. على الآيفون ضيف الموقع للشاشة الرئيسية الأول.</div>` : "";
+    const sh = spSheet("الإشعارات", `${note}
+      ${switchRow("stNotif", prefs.notifs && perm === "granted", "إشعارات الرسائل", "تنبيه لما حد يبعتلك")}
+      ${switchRow("stSound", prefs.sound, "صوت التنبيه")}
+      ${switchRow("stPrev", prefs.preview, "إظهار نص الرسالة", "لو اتقفل هيظهر «رسالة جديدة» بس")}
+      ${switchRow("stQuiet", LS.get("quiet", false), "ساعات الهدوء", "بيوقف صوت وإشعارات الموقع في الوقت ده")}
+      <div class="field qrow"><label for="stQf">من</label><input type="time" id="stQf" value="${esc(LS.get("qFrom", "23:00"))}"><label for="stQt">إلى</label><input type="time" id="stQt" value="${esc(LS.get("qTo", "07:00"))}"></div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="stTest">جرّب إشعار</button><button class="btn-ghost" id="stCheck">فحص الإشعارات</button></div>`);
+    sh.querySelector("#stNotif").onchange = async e => { if (e.target.checked) { const p = await enableNotifs(); if (p !== "granted") { e.target.checked = false; return; } LS.set("notifs", true); } else { LS.set("notifs", false); unregisterPush(); } };
+    sh.querySelector("#stSound").onchange = e => { LS.set("sound", e.target.checked); if (e.target.checked) beep(); };
+    sh.querySelector("#stPrev").onchange = e => LS.set("preview", e.target.checked);
+    sh.querySelector("#stQuiet").onchange = e => { LS.set("quiet", e.target.checked); toast(e.target.checked ? "ساعات الهدوء شغالة" : "ساعات الهدوء مقفولة"); };
+    sh.querySelector("#stQf").onchange = e => LS.set("qFrom", e.target.value || "23:00");
+    sh.querySelector("#stQt").onchange = e => LS.set("qTo", e.target.value || "07:00");
+    sh.querySelector("#stCheck").onclick = runPushCheck;
+    sh.querySelector("#stTest").onclick = async () => { if (Notification.permission !== "granted") { await enableNotifs(); } showNotif("ES Chat Pro", "ده إشعار تجريبي", "test"); beep(); };
+    return;
+  }
+  if (k === "data") {
+    const sh = spSheet("البيانات والتخزين", `<div class="sp-info"><small>المساحة المستخدمة على الجهاز</small><div id="spUsage">…</div></div>
+      <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="spClear">مسح التخزين المؤقت</button><button class="btn-ghost" id="stReload">إعادة تحميل التطبيق</button></div>
+      <div class="hint">مسح التخزين المؤقت مش بيمسح رسايلك ولا مفاتيح التشفير.</div>`);
+    if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(x => { const mb = v => (v / 1048576).toFixed(1) + " MB"; const el = sh.querySelector("#spUsage"); if (el) el.textContent = mb(x.usage || 0) + (x.quota ? " من " + mb(x.quota) : ""); }).catch(() => {});
+    else sh.querySelector("#spUsage").textContent = "غير متاح في المتصفح ده";
+    sh.querySelector("#spClear").onclick = async () => { try { if (window.caches) await Promise.all((await caches.keys()).map(x => caches.delete(x))); DEC.clear(); PREV.clear(); toast("اتمسح التخزين المؤقت"); } catch { toast("تعذّر المسح"); } };
+    sh.querySelector("#stReload").onclick = () => location.reload();
+    return;
+  }
+  if (k === "devices") {
+    const ua = navigator.userAgent, os = /Android/i.test(ua) ? "Android" : /iPhone|iPad|iPod/i.test(ua) ? "iOS" : /Windows/i.test(ua) ? "Windows" : /Mac/i.test(ua) ? "macOS" : /Linux/i.test(ua) ? "Linux" : "جهاز";
+    const br = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "المتصفح";
+    spSheet("الأجهزة", `<div class="panel-h" style="margin-top:4px">هذا الجهاز</div>
+      <div class="sp-info"><small>${br}</small><div>${os} — شغّال دلوقتي</div></div>
+      <div class="sp-info"><small>مفتاح التشفير</small><div>${S.e2ee && S.e2ee.ready ? "🔒 جاهز على هذا الجهاز" : "غير جاهز"}${S.e2ee && S.e2ee.deviceId ? ` · <bdi dir="ltr">${esc(String(S.e2ee.deviceId).slice(0, 8))}</bdi>` : ""}</div></div>
+      <div class="hint">مفاتيح فك الرسايل الخاصة محفوظة على المتصفح ده بس. لو مسحت بيانات المتصفح ممكن متقدرش تفتح رسايلك القديمة.</div>`);
+    return;
+  }
+  if (k === "power") {
+    const on = LS.get("psave", false);
+    const sh = spSheet("توفير الطاقة", `${switchRow("stPS", on, "وضع توفير الطاقة", "بيقفل الحركات ومعاينة الروابط ويصغّر المسافات")}<div class="hint">مفيد لو الجهاز بطيء أو البطارية على وشك تخلص.</div>`);
+    sh.querySelector("#stPS").onchange = e => {
+      const v = e.target.checked; LS.set("psave", v);
+      if (v) { LS.set("motion", false); LS.set("dens", "c"); LS.set("lcards", false); } else { LS.set("motion", true); LS.set("dens", "n"); LS.set("lcards", true); }
+      applyTheme(); toast(v ? "توفير الطاقة شغال" : "توفير الطاقة مقفول");
+    };
+    return;
+  }
+  if (k === "lang") {
+    spSheet("اللغة", `<div class="mrow static on"><span>العربية</span><span>✓</span></div><div class="hint">الموقع حاليًا بالعربية فقط.</div>`);
+    return;
+  }
+  const FAQ = [
+    ["هل رسايلي الخاصة مشفّرة؟", "أيوه. المحادثات الخاصة (بين شخصين) بتتشفّر على جهازك قبل ما تتبعت، ومفتاح الفك محفوظ على جهازك بس. المجموعات والقنوات والغرفة العامة مش مشفّرة من طرف لطرف."],
+    ["ليه شايف «رسالة مشفّرة» على الرسالة؟", "ده معناه إن الجهاز ده مش معاه مفتاح فك الرسالة (مثلًا بعد مسح بيانات المتصفح أو لو الرسالة اتبعتت لجهاز تاني)."],
+    ["إزاي أضيف حد؟", "من خانة البحث اكتب @اسم_المستخدم وافتح المحادثة. للقنوات اكتب #اسم_القناة."],
+    ["إزاي أبعت ملصق؟", "افتح أي محادثة خاصة واضغط على زر الإيموجي، وبعدين تاب «الملصقات». اضغط مطوّلًا على ملصق لإضافته للمفضلة."],
+    ["إزاي أخفي آخر ظهور؟", "الإعدادات ← الخصوصية والأمان ← إخفاء حالتي."],
+    ["الإشعارات مش بتوصل؟", "الإعدادات ← الإشعارات ← فحص الإشعارات، وهيقولك السبب."]
+  ];
+  if (k === "faq") {
+    spSheet("الأسئلة الشائعة", FAQ.map(([q, a]) => `<details class="sp-faq"><summary>${q}</summary><p>${a}</p></details>`).join(""));
+    return;
+  }
+  if (k === "features") {
+    const F = ["محادثات خاصة مشفّرة من طرف لطرف", "مجموعات وقنوات عامة وخاصة بروابط دعوة", "ردود وتفاعلات وتوجيه ورسائل مميزة", "رسائل صوتية وصور وملفات ومواقع واستفتاءات", "ملصقات ES وملصقاتك الخاصة", "رسائل مختفية وتثبيت وأرشفة ومجلدات للمحادثات", "إشعارات فورية حتى والموقع مقفول", "يشتغل كتطبيق على الموبايل (PWA)"];
+    spSheet("ميزات ES Chat Pro", `<div class="sp-feat">${F.map(x => `<div>✨ ${x}</div>`).join("")}</div>`);
+    return;
+  }
+  if (k === "policy") {
+    spSheet("سياسة الخصوصية", `<div class="sp-policy"><p><b>البيانات اللي بنحفظها:</b> الاسم، اليوزر، النبذة، الصورة، وإيميل الدخول (في مستند خاص).</p>
+      <p><b>الرسائل الخاصة:</b> بتتشفّر على جهازك ومش بنقدر نقراها. <b>المجموعات والقنوات والغرفة العامة:</b> مش مشفّرة من طرف لطرف.</p>
+      <p><b>الصور والملفات:</b> بتتضغط وبتتخزن في قاعدة البيانات مع الرسالة.</p>
+      <p><b>الحالة:</b> تقدر تخفي آخر ظهورك وتأكيد القراءة من الخصوصية والأمان.</p>
+      <p><b>الإدارة:</b> إدارة الموقع تقدر توقف حساب أو تحذف محتوى مخالف.</p>
+      <p>للاستفسار: ${esc(OWNER_EMAIL)}</p></div>`);
+    return;
+  }
+}
+
+function openSettings() { setTab("settings"); }
 async function openByUsername(u) {
   try {
     const s = await getDoc(doc(db, "usernames", String(u).toLowerCase()));
@@ -707,10 +884,11 @@ function paintMe() {
   $("#meBtn").innerHTML = me.photo ? `<img src="${esc(me.photo)}" alt="">` : esc((me.name || "?").charAt(0).toUpperCase());
   $("#whoami").innerHTML = "<bdi>@" + esc(me.username || "") + "</bdi>";
   $("#ownerBtn").classList.toggle("hidden", !isOwner());
+  if (S.tab === "settings") renderSettingsPage();
 }
 async function getUser(uid, force = false) {
   if (!force && S.users.has(uid)) return S.users.get(uid);
-  try { const s = await getDoc(doc(db, "users", uid, "public", "profile")); if (s.exists()) { S.users.set(uid, s.data()); return s.data(); } } catch (e) { console.error(e); }
+  try { const s = await getDoc(doc(db, "users", uid, "public", "profile")); if (s.exists()) { let d = s.data(); if (S.user && uid === S.user.uid && S.me) { d = { ...d }; for (const k of ["name", "photo", "gender", "bio", "username"]) if (S.me[k]) d[k] = S.me[k]; } S.users.set(uid, d); return d; } } catch (e) { console.error(e); }
   return null;
 }
 async function ensureUsers(uids) {
@@ -867,6 +1045,7 @@ const MUTE = `<svg class="mini-ic" width="13" height="13" viewBox="0 0 24 24"><p
 S.tab = "chats";
 const TABS_SEARCH = { chats: "ابحث باليوزر @ أو بالقناة #", channels: "ابحث عن قناة بالاسم أو #اسم_القناة" };
 function paintTabs() {
+  const sb = document.querySelector(".sidebar"); if (sb) sb.classList.toggle("on-settings", S.tab === "settings");
   document.querySelectorAll("#tabbar [data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === S.tab));
   $("#search").placeholder = TABS_SEARCH[S.tab] || TABS_SEARCH.chats;
   $("#chipsRow").classList.toggle("hidden", S.tab !== "chats");
@@ -883,7 +1062,6 @@ function setTab(t) {
 }
 $("#tabbar").addEventListener("click", e => {
   const b = e.target.closest("[data-tab]"); if (!b) return; const t = b.dataset.tab;
-  if (t === "settings") return openSettings();
   if (t === "profile") return openProfile(S.user.uid);
   setTab(t);
 });
@@ -908,6 +1086,7 @@ function renderList() {
 }
 function renderListNow() {
   if (S.view !== "app") return;
+  if (S.tab === "settings") { paintTabs(); return renderSettingsPage(); }
   if (S.tab === "channels") return renderChannelsTab();
   renderChips(); paintTabs();
   const term = $("#search").value.trim().toLowerCase().replace(/^@/, "");
@@ -943,9 +1122,10 @@ function renderListNow() {
     const dots = (P.cl[c.id] || []).map(id => P.labels.find(l => l.id === id)).filter(Boolean).map(l => `<i class="ldot" style="background:${esc(l.c)}"></i>`).join("");
     return `<div class="chat-item ${S.chat && S.chat.peer === pid ? "active" : ""} ${n ? "has-unread" : ""}" data-open="${esc(pid)}" data-chat="1"><div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div>
       <div class="chat-meta"><div class="row1"><div class="name">${esc(u.name)}${badge(u, 15)}${dots}</div><span class="when">${esc(listTime(c.lastAt))}</span></div>
-      <div class="row2"><div class="preview">${c.lastUid === S.user.uid ? "أنت: " : ""}${esc(c.lastText || "")}</div>${P.pins.includes(c.id) ? PIN : ""}${muted ? MUTE : ""}${n ? `<b class="unread ${muted ? "muted" : ""}">${n > 99 ? "99+" : n}</b>` : ""}</div></div></div>`;
+      <div class="row2"><div class="preview">${c.lastUid === S.user.uid ? "أنت: " : ""}${esc(dmPrev(c))}</div>${P.pins.includes(c.id) ? PIN : ""}${muted ? MUTE : ""}${n ? `<b class="unread ${muted ? "muted" : ""}">${n > 99 ? "99+" : n}</b>` : ""}</div></div></div>`;
   }).join("") : `<div class="empty-list">${f === "all" ? "مفيش محادثات لسه.<br>اطلب من صاحبك الـ @username بتاعه وابحث بيه فوق." : "مفيش محادثات هنا."}</div>`;
   const lst = $("#list"); if (lst._h !== h) { lst._h = h; lst.innerHTML = h; }
+  ensureDmPreviews(chats);
 }
 let lpT, lpFired = false, lpX = 0, lpY = 0;
 const openAnyMenu = v => v.startsWith("g:") ? openGroupMenu(v.slice(2)) : openChatMenu(v);
@@ -1107,7 +1287,7 @@ function renderMsgsPlain(docs) {
     let body = "";
       if (m.deleted) body = `<div class="txt del-m">الرسالة دي اتحذفت</div>`;
       else {
-      if (m.sticker && (m.sticker.emoji || m.sticker.img)) body += `<div class="sticker" title="${esc(m.sticker.label || "ملصق ES Chat Pro")}">${m.sticker.img ? `<img src="${esc(m.sticker.img)}" alt="${esc(m.sticker.label || "ملصق")}">` : `<span>${esc(m.sticker.emoji)}</span>`}<small>${esc(m.sticker.label || "ES Sticker")}</small></div>`;
+      if (m.sticker && (m.sticker.emoji || m.sticker.img)) body += `<div class="sticker" title="${esc(m.sticker.label || "ملصق ES Chat Pro")}">${m.sticker.img ? `<img src="${esc(m.sticker.img)}" alt="${esc(m.sticker.label || "ملصق")}">` : `<span>${esc(m.sticker.emoji)}</span>`}</div>`;
       if (m.topicId) body += `<div class="msg-topic"># موضوع المجموعة</div>`;
       if (m.fwd) body += `<div class="fwd">معاد توجيهها</div>`;
       if (m.reply) body += `<div class="quote" data-q="${esc(m.reply.id)}"><b>${esc(nameOf(m.reply.uid))}</b><span>${esc(m.reply.t)}</span></div>`;
@@ -1131,7 +1311,7 @@ function renderMsgsPlain(docs) {
     }
     const seen = peerRead && peerRead.getTime() >= dt.getTime();
     const tick = mine && c.peer && !m.deleted ? (S.me.readReceipts === false ? TK1 : seen ? TK2 : TK1) : "";
-    h += `<div class="msg ${mine ? "me" : "them"}${cont ? " cont" : ""}${m.deleted ? " gone" : ""}" data-mid="${esc(d.id)}">`
+    h += `<div class="msg ${mine ? "me" : "them"}${cont ? " cont" : ""}${m.deleted ? " gone" : ""}${m.sticker && !m.deleted && !m.text ? " stk" : ""}" data-mid="${esc(d.id)}">`
       + (pub && !mine && !cont ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : "")
       + body + `<div class="tm">${stars.has(c.id + "/" + d.id) ? `<span class="star">${ic("star", 11, "fill")}</span>` : ""}<span>${fmtTime(dt)}</span>${tick}</div></div>`;
   }
@@ -1504,7 +1684,7 @@ async function sendTo(c, payload) {
     if (!bundle) { toast("مفتاح التشفير للطرف الآخر غير جاهز. افتح الموقع من الجهاز الآخر مرة واحدة ثم جرّب."); throw new Error("peer-crypto-missing"); }
     const cipher = await encryptPrivatePayload(S.user.uid, bundle, payload);
     data = { uid: S.user.uid, at: serverTimestamp(), cipher };
-    encryptedPrivate = true;
+    encryptedPrivate = true; PREV.set(c.id, { ms: -1, t: previewOf(payload).slice(0, 80) });
   }
   if (ttl) data.exp = Date.now() + ttl * 1000;
   const wr = addDoc(collection(db, "chats", c.id, "messages"), data);
@@ -1651,9 +1831,17 @@ const ES_STICKERS = [
 ];
 const customStickerGet = () => LS.get("custom_stickers", []).filter(x => x && x.img && String(x.img).startsWith("data:image/")).slice(-24);
 const stickerFavGet = () => LS.get("sticker_favs", []);
+const EMO_GROUPS = [
+  ["الوجوه", "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👻 👽 🤖"],
+  ["الإيماءات", "👍 👎 👊 ✊ 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✌️ 🤞 🤟 🤘 👌 🤌 🤏 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 🤙 💪 🫶 🫡 ✍️"],
+  ["قلوب ورموز", "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💯 💢 💥 💫 💦 💨 🔥 ⭐ 🌟 ✨ ⚡ 🎉 🎊 🎯 🏆 👑 💎 🔔 📌 🔒 🔓 💡 ✅ ❌ ❓ ❗ 💬 👀"],
+  ["أشياء", "🚀 ✈️ 🚗 ⚽ 🏀 🎮 🎧 🎤 🎵 🎶 📱 💻 📷 🎁 🎈 ☕ 🍕 🍔 🍟 🍰 🍫 🌹 🌸 🌙 ☀️ 🌈 ☁️ 🐱 🐶 🦁 🐼"]
+];
+/* ---------------- بانل الإيموجي والملصقات (شكل تيليجرام) ---------------- */
+const STK_FAV = "sticker_favs2", STK_REC = "sticker_recent", EMO_REC = "emo_recent";
 function stickerItems() {
-  const base = ES_STICKERS.map(([emoji, label], i) => ({ id: "b" + i, emoji, label }));
-  return [...base, ...customStickerGet().map((x, i) => ({ ...x, id: "c" + i }))];
+  const base = ES_STICKERS.map(([emoji, label]) => ({ id: "e:" + emoji, emoji, label }));
+  return [...base, ...customStickerGet().map(x => ({ ...x, id: "c:" + x.at }))];
 }
 async function addCustomSticker(file) {
   if (!file || !S.chat?.peer) return;
@@ -1661,46 +1849,74 @@ async function addCustomSticker(file) {
   try {
     const img = await compressImage(file, 320, 0.62);
     if (img.length > 72000) return toast("الملصق أكبر من 70 KB بعد الضغط");
-    const list = [...customStickerGet(), { img, label: "ملصق شخصي", at: Date.now() }].slice(-24); LS.set("custom_stickers", list); toast("اتضافت للمكتبة على جهازك"); openStickerPicker();
+    const list = [...customStickerGet(), { img, label: "ملصق شخصي", at: Date.now() }].slice(-24); LS.set("custom_stickers", list); toast("اتضافت للمكتبة على جهازك"); openPanel("stk");
   } catch { toast("ملف الملصق غير صالح"); }
 }
-function openStickerPicker() {
-  if (!S.chat?.peer) return toast("الملصقات المشفّرة متاحة حاليًا في الخاص فقط");
-  const items = stickerItems(), favs = stickerFavGet();
-  const tile = (x, i) => `<button type="button" class="sticker-pick ${favs.includes(x.id) ? "fav" : ""}" data-sticker="${i}"><i data-fav="${esc(x.id)}">${favs.includes(x.id) ? ic("star", 16, "fill") : ic("star", 16)}</i>${x.img ? `<img src="${esc(x.img)}" alt="">` : `<span>${esc(x.emoji)}</span>`}<small>${esc(x.label)}</small></button>`;
-  const favItems = items.filter(x => favs.includes(x.id));
-  const sh = openModal(`<div class="menu"><div class="menu-h">ملصقات ES Chat Pro</div><div class="sticker-actions"><button type="button" class="btn-mini" id="addSticker">+ إضافة من الجهاز</button></div>${favItems.length ? `<div class="panel-h">المفضلة</div><div class="sticker-grid">${favItems.map((x, i) => tile(x, items.indexOf(x))).join("")}</div>` : ""}<div class="panel-h">كل الملصقات</div><div class="sticker-grid">${items.map(tile).join("")}</div><div class="hint">المفضلة والملصقات الشخصية محفوظة على جهازك، والملصق يُرسل مشفّرًا في الخاص.</div></div>`);
-  sh.querySelector("#addSticker").onclick = () => $("#fileSticker").click();
-  sh.querySelector(".sticker-grid").onclick = async e => {
-    const f = e.target.closest("[data-fav]"); if (f) { const id = f.dataset.fav, next = favs.includes(id) ? favs.filter(x => x !== id) : [...favs, id].slice(-30); LS.set("sticker_favs", next); closeModal(); openStickerPicker(); return; }
-    const b = e.target.closest("[data-sticker]"); if (!b) return; const x = items[+b.dataset.sticker]; closeModal(); try { await sendTo(S.chat, { sticker: x.img ? { img: x.img, label: x.label } : { emoji: x.emoji, label: x.label } }); } catch { toast("الملصق ماتبعتش"); }
-  };
-}
-$("#fileImg").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
-$("#fileCam").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
-$("#fileDoc").onchange = e => { sendFile(e.target.files[0]); e.target.value = ""; };
-$("#fileSticker").onchange = e => { addCustomSticker(e.target.files[0]); e.target.value = ""; };
-const EMO_GROUPS = [
-  ["الوجوه", "😀 😃 😄 😁 😆 😅 🤣 😂 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😗 😚 😋 😛 😜 🤪 😝 🤑 🤗 🤭 🤫 🤔 🤐 🤨 😐 😑 😶 😏 😒 🙄 😬 🤥 😌 😔 😪 🤤 😴 😷 🤒 🤕 🤢 🤮 🥵 🥶 🥴 😵 🤯 🤠 🥳 😎 🤓 🧐 😕 😟 🙁 😮 😯 😲 😳 🥺 😦 😧 😨 😰 😥 😢 😭 😱 😖 😣 😞 😓 😩 😫 🥱 😤 😡 😠 🤬 😈 👿 💀 💩 🤡 👻 👽 🤖"],
-  ["الإيماءات", "👍 👎 👊 ✊ 🤛 🤜 👏 🙌 👐 🤲 🤝 🙏 ✌️ 🤞 🤟 🤘 👌 🤌 🤏 👈 👉 👆 👇 ☝️ ✋ 🤚 🖐️ 🖖 👋 🤙 💪 🫶 🫡 ✍️"],
-  ["قلوب ورموز", "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💯 💢 💥 💫 💦 💨 🔥 ⭐ 🌟 ✨ ⚡ 🎉 🎊 🎯 🏆 👑 💎 🔔 📌 🔒 🔓 💡 ✅ ❌ ❓ ❗ 💬 👀"],
-  ["أشياء", "🚀 ✈️ 🚗 ⚽ 🏀 🎮 🎧 🎤 🎵 🎶 📱 💻 📷 🎁 🎈 ☕ 🍕 🍔 🍟 🍰 🍫 🌹 🌸 🌙 ☀️ 🌈 ☁️ 🐱 🐶 🦁 🐼"]
-];
-function openEmojiPanel() {
+function openPanel(tab = "emo") {
   if ($("#input").disabled) return;
-  const stk = !!(S.chat && S.chat.peer);
-  const sh = openModal(`<div class="grab"></div><div class="emo-tabs"><button type="button" class="on" data-t="emo">الرموز التعبيرية</button>${stk ? `<button type="button" data-t="stk">الملصقات</button>` : ""}</div><div class="emo-scroll">${EMO_GROUPS.map(([t, g]) => `<div class="panel-h">${t}</div><div class="emo-grid">${g.split(" ").map(e => `<button type="button" data-e="${e}">${e}</button>`).join("")}</div>`).join("")}</div>`);
-  sh.classList.add("emo-sheet");
-  sh.querySelector(".emo-tabs").onclick = e => { const b = e.target.closest("[data-t]"); if (b && b.dataset.t === "stk") { closeModal(); openStickerPicker(); } };
-  sh.querySelector(".emo-scroll").onclick = e => {
+  const dm = !!(S.chat && S.chat.peer);
+  if (tab === "stk" && !dm) { toast("الملصقات المشفّرة متاحة حاليًا في الخاص فقط"); tab = "emo"; }
+  const sh = openModal(`<div class="grab"></div><div class="tgp-body" id="tgpBody"></div><div class="tgp-bar" id="tgpBar"></div>`);
+  sh.classList.add("emo-sheet", "tgp-sheet");
+  const body = sh.querySelector("#tgpBody"), bar = sh.querySelector("#tgpBar");
+  let cur = tab, lpT = 0, lpFired = false;
+  const stkTile = (x, favs) => `<button type="button" class="stk-tile" data-sid="${esc(x.id)}">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : `<span>${esc(x.emoji)}</span>`}${favs.includes(x.id) ? `<i class="stk-fav">★</i>` : ""}</button>`;
+  const stkHtml = () => {
+    const items = stickerItems(), byId = new Map(items.map(x => [x.id, x])), favs = LS.get(STK_FAV, []).filter(i => byId.has(i)), rec = LS.get(STK_REC, []).filter(i => byId.has(i));
+    const custom = items.filter(x => x.id[0] === "c"), pack = items.filter(x => x.id[0] === "e");
+    const sec = (t, arr) => arr.length ? `<div class="stk-h">${t}</div><div class="stk-grid">${arr.map(x => stkTile(x, favs)).join("")}</div>` : "";
+    return (rec.length ? `<div class="stk-strip"><i class="stk-clock">🕘</i>${rec.slice(0, 14).map(i => stkTile(byId.get(i), favs)).join("")}</div>` : "")
+      + sec("المفضلة", favs.map(i => byId.get(i)))
+      + sec("مستخدمة حديثًا", rec.map(i => byId.get(i)).slice(0, 8))
+      + `<div class="stk-h">ملصقاتي</div><div class="stk-grid"><button type="button" class="stk-tile stk-add" data-add="1"><span>＋</span><small>إنشاء</small></button>${custom.map(x => stkTile(x, favs)).join("")}</div>`
+      + sec("ES Chat Pro", pack)
+      + `<div class="hint stk-hint">اضغط مطوّلًا على ملصق لإضافته للمفضلة</div>`;
+  };
+  const emoHtml = () => {
+    const rec = LS.get(EMO_REC, []);
+    return `<div class="tgp-nav">${EMO_GROUPS.map(([t, g], i) => `<button type="button" data-go="eg${i}" title="${t}">${g.split(" ")[0]}</button>`).join("")}</div>`
+      + (rec.length ? `<div class="panel-h">المستخدمة حديثًا</div><div class="emo-grid">${rec.map(e => `<button type="button" data-e="${e}">${e}</button>`).join("")}</div>` : "")
+      + EMO_GROUPS.map(([t, g], i) => `<div class="panel-h" id="eg${i}">${t}</div><div class="emo-grid">${g.split(" ").map(e => `<button type="button" data-e="${e}">${e}</button>`).join("")}</div>`).join("");
+  };
+  const paint = (t, keep) => {
+    cur = t; const st = keep ? body.scrollTop : 0;
+    bar.innerHTML = dm ? `<div class="tgp-pill"><button type="button" data-t="stk" class="${t === "stk" ? "on" : ""}">الملصقات</button><button type="button" data-t="emo" class="${t === "emo" ? "on" : ""}">الرموز التعبيرية</button></div>` : "";
+    body.innerHTML = t === "stk" ? stkHtml() : emoHtml(); body.scrollTop = st;
+  };
+  paint(tab);
+  bar.onclick = e => { const b = e.target.closest("[data-t]"); if (b && b.dataset.t !== cur) paint(b.dataset.t); };
+  body.addEventListener("pointerdown", e => {
+    const t = e.target.closest("[data-sid]"); if (!t) return; lpFired = false; clearTimeout(lpT);
+    lpT = setTimeout(() => {
+      lpFired = true; const id = t.dataset.sid, favs = LS.get(STK_FAV, []), has = favs.includes(id);
+      LS.set(STK_FAV, has ? favs.filter(x => x !== id) : [...favs, id].slice(-30)); toast(has ? "اتشال من المفضلة" : "اتضاف للمفضلة ★"); paint("stk", true);
+    }, 450);
+  });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel", "scroll"]) body.addEventListener(ev, () => clearTimeout(lpT), true);
+  body.addEventListener("contextmenu", e => e.preventDefault());
+  body.onclick = async e => {
+    const g = e.target.closest("[data-go]"); if (g) { const el = body.querySelector("#" + g.dataset.go); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
+    if (e.target.closest("[data-add]")) { $("#fileSticker").click(); return; }
+    const s = e.target.closest("[data-sid]");
+    if (s) {
+      if (lpFired) { lpFired = false; return; }
+      const x = stickerItems().find(i => i.id === s.dataset.sid); if (!x) return;
+      LS.set(STK_REC, [x.id, ...LS.get(STK_REC, []).filter(i => i !== x.id)].slice(0, 20));
+      closeModal(); try { await sendTo(S.chat, { sticker: x.img ? { img: x.img, label: x.label } : { emoji: x.emoji, label: x.label } }); } catch { toast("الملصق ماتبعتش"); }
+      return;
+    }
     const b = e.target.closest("[data-e]"); if (!b) return;
     const inp = $("#input"), ch = b.dataset.e, v = inp.value, st = inp.selectionStart ?? v.length, en = inp.selectionEnd ?? st;
     if (v.length - (en - st) + ch.length > inp.maxLength) return;
     inp.value = v.slice(0, st) + ch + v.slice(en);
     const p = st + ch.length; try { inp.setSelectionRange(p, p); } catch {}
     inp.dispatchEvent(new Event("input"));
+    LS.set(EMO_REC, [ch, ...LS.get(EMO_REC, []).filter(i => i !== ch)].slice(0, 24));
   };
 }
+const openStickerPicker = () => openPanel("stk");
+const openEmojiPanel = () => openPanel("emo");
+
 $("#emojiBtn").onclick = openEmojiPanel;
 $("#fileImg").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
 $("#fileCam").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };

@@ -435,3 +435,68 @@ button>.ico{margin:auto}
 .mfile .ico{color:var(--ice)}
 .pin-i .ico{color:var(--ice)}
 .pc b .ico{display:inline-block}
+
+/* ================= v31: بانل الإيموجي/الملصقات + الإعدادات بشكل تيليجرام ================= */
+.sheet.tgp-sheet{padding:10px 0 0;height:min(62dvh,560px);display:flex;flex-direction:column;overflow:hidden;position:relative}
+.tgp-sheet .grab{flex:0 0 auto}
+.tgp-body{flex:1;overflow-y:auto;padding:0 14px 76px;overscroll-behavior:contain}
+.tgp-bar{position:absolute;inset-inline:0;bottom:12px;display:flex;justify-content:center;pointer-events:none}
+.tgp-pill{pointer-events:auto;display:flex;gap:2px;background:color-mix(in srgb,var(--panel2) 88%,#000);border:1px solid var(--line);border-radius:999px;padding:4px;box-shadow:0 6px 22px #0009}
+.tgp-pill button{border:0;background:none;color:var(--muted);padding:9px 20px;border-radius:999px;font-weight:600;font-size:14px}
+.tgp-pill button.on{background:var(--blue);color:#fff}
+.tgp-nav{position:sticky;top:0;z-index:2;display:flex;gap:4px;overflow-x:auto;padding:4px 0 8px;background:var(--panel)}
+.tgp-nav button{flex:0 0 auto;border:0;background:var(--ink);border-radius:12px;padding:6px 11px;font-size:20px}
+.stk-strip{display:flex;gap:8px;align-items:center;overflow-x:auto;padding:4px 0 10px}
+.stk-strip .stk-tile{flex:0 0 56px;height:56px;min-height:0;border-radius:14px}
+.stk-strip .stk-tile span{font-size:34px}
+.stk-clock{flex:0 0 44px;height:44px;border-radius:50%;background:var(--panel2);display:grid;place-items:center;font-style:normal;font-size:20px}
+.stk-h{margin:14px 2px 8px;color:var(--ice);font-size:13px;font-weight:700}
+.stk-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.stk-tile{position:relative;aspect-ratio:1;min-height:0;border:0;border-radius:16px;background:none;display:grid;place-items:center;padding:4px;color:var(--text);-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.stk-tile:active{background:var(--panel2);transform:scale(.94)}
+.stk-tile span{font-size:52px;line-height:1}
+.stk-tile img{width:100%;height:100%;object-fit:contain;pointer-events:none}
+.stk-add{background:var(--panel2);border:1px dashed var(--line);color:var(--ice)}
+.stk-add span{font-size:30px}.stk-add small{font-size:11px;color:var(--muted)}
+.stk-fav{position:absolute;top:3px;inset-inline-end:5px;font-style:normal;font-size:12px;color:#f5c542}
+.stk-hint{text-align:center;margin:16px 0 0}
+/* الملصق في الشات: من غير فقاعة ولا اسم (زي تيليجرام) */
+.msg.stk{background:none!important;border:0!important;box-shadow:none!important;padding:2px 4px}
+.msg.stk .sticker{width:auto;min-height:0;padding:0;background:none;border:0;box-shadow:none;border-radius:0}
+.msg.stk .sticker span{font-size:104px;line-height:1.1;display:block}
+.msg.stk .sticker img{width:150px;height:150px;object-fit:contain;display:block}
+.msg.stk .tm{background:#0008;border-radius:10px;padding:1px 7px;width:fit-content;margin-top:2px}
+.msg.stk.me .tm{margin-inline-start:auto}
+/* الإعدادات كتاب جوه السايدبار */
+.settings-page{display:none;flex:1;overflow-y:auto;padding:0 12px 18px;background:var(--ink)}
+.sidebar.on-settings .settings-page{display:block}
+.sidebar.on-settings .top,.sidebar.on-settings .searchbox,.sidebar.on-settings #chipsRow,.sidebar.on-settings #list,.sidebar.on-settings #annBar{display:none!important}
+.sp-top{position:sticky;top:0;z-index:2;background:var(--ink);padding:16px 6px 8px}
+.sp-top h2{margin:0;font-size:22px}
+.sp-profile{display:flex;flex-direction:column;align-items:center;padding:6px 0 16px;text-align:center}
+.sp-av{position:relative;border:0;background:none;padding:0}
+.sp-av .avatar{width:104px;height:104px;flex-basis:104px;font-size:42px}
+.sp-cam{position:absolute;inset-inline-end:-2px;bottom:-2px;width:36px;height:36px;border-radius:50%;background:#2f9bff;color:#fff;display:grid;place-items:center;border:3px solid var(--ink)}
+.sp-profile h3{margin:12px 0 2px;font-size:23px;display:flex;align-items:center;gap:6px}
+.sp-un{color:var(--muted);font-size:14px}
+.sp-card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:6px 0;margin-bottom:12px;overflow:hidden}
+.sp-h{padding:12px 16px 4px;color:var(--ice);font-size:13px;font-weight:700}
+.sp-row{display:flex;align-items:center;gap:14px;width:100%;border:0;background:none;color:var(--text);padding:11px 14px;text-align:start}
+.sp-row:active{background:var(--panel2)}
+.sp-ic{flex:0 0 40px;width:40px;height:40px;border-radius:12px;display:grid;place-items:center;color:#fff;overflow:hidden}
+.sp-ic-av .avatar{width:40px;height:40px;flex-basis:40px;font-size:16px;border:0}
+.sp-t{min-width:0;flex:1}.sp-t b{display:block;font-size:15px;font-weight:600}
+.sp-t small{display:block;color:var(--muted);font-size:13px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sp-ver{text-align:center;color:var(--muted);font-size:12px;padding:6px 0 90px}
+.sheet.sp-sheet{padding-top:14px}
+.sp-sheet #xBtn{display:none}
+.sp-sub-h{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:18px}
+.sp-back{border:0;background:none;color:var(--text);width:38px;height:38px;display:grid;place-items:center;border-radius:50%}
+.sp-back:active{background:var(--panel2)}
+.sp-info{background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin:8px 0}
+.sp-info small{display:block;color:var(--ice);font-size:12px;margin-bottom:4px}
+.sp-faq{background:var(--ink);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:8px 0}
+.sp-faq summary{font-weight:600;cursor:pointer}.sp-faq p{margin:8px 0 0;color:var(--muted);line-height:1.8;font-size:14px}
+.sp-feat div{padding:12px 4px;border-bottom:1px solid #10205a;line-height:1.7}
+.sp-policy p{line-height:1.9;margin:0 0 12px;color:var(--text);font-size:14px}
+@media (max-width:760px){.settings-page{padding-bottom:84px}}
