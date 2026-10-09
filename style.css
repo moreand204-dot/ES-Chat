@@ -606,3 +606,25 @@ button>.ico{margin:auto}
 .chat-item.ch-card.active{border-color:var(--blue)}
 .ch-actions{display:flex;gap:8px;padding:2px 2px 10px}
 .ch-actions .btn-mini{flex:1;height:40px;border-radius:14px}
+
+/* ---- معلومات القناة بشكل تيليجرام + إحصائيات ---- */
+.ci-tiles{display:flex;gap:8px;margin:14px 0 6px}.ci-tile{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border-radius:16px;border:1px solid var(--line);background:var(--panel2);color:var(--ice);font-size:12px}
+.ci-tile:active{background:var(--ink)}
+.ci-card{margin:10px 0;padding:12px 14px;border-radius:16px;background:var(--panel2);border:1px solid var(--line);text-align:start}
+.ci-k{font-size:11px;color:var(--muted);margin-top:6px}.ci-k:first-child{margin-top:0}.ci-v{font-size:14px;line-height:1.8;word-break:break-word}.ci-link{color:var(--ice)}
+.ci-stats{padding:2px 14px}.ci-row{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}.ci-row:last-child{border:0}.ci-row b{color:var(--ice)}
+.cs-range{font-size:12px;color:var(--muted);margin:8px 0 4px}
+.cs-big{font-size:38px;font-weight:700;text-align:center;margin-top:10px}.cs-sub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:10px}.cs-sub .up{color:#2fd27a}.cs-sub .down{color:#ff6b81}
+.cs-donut{display:flex;align-items:center;justify-content:center;gap:16px;margin:8px 0 12px}.cs-leg div,.cs-leg2 div{display:flex;align-items:center;gap:6px;font-size:13px;margin:5px 0}.cs-leg i,.cs-leg2 i{width:9px;height:9px;border-radius:50%;display:inline-block}.cs-leg2{margin-bottom:8px}.cs-leg2 b{margin-inline-start:auto}
+.cs-reg{margin:10px 0}.cs-reg-h{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}.cs-bar{height:7px;border-radius:9px;background:var(--ink);overflow:hidden}.cs-bar i{display:block;height:100%;background:#4fb8ee;border-radius:9px}
+/* ---- شات BotFather كمحادثة عادية ---- */
+.sheet.bf-sheet{width:100%;max-width:none;height:100dvh;max-height:100dvh;border-radius:0;padding:0;display:flex;flex-direction:column;border:0;animation:none}
+.modal:has(.bf-sheet){padding:0;place-items:stretch}
+.bf-sheet .bf-head{padding:max(10px,env(safe-area-inset-top)) 12px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+.bf-sheet .bf-log{padding:12px 12px 6px;gap:6px}
+.bf-m{box-shadow:none}.bf-m.me{border-end-end-radius:5px}.bf-m.bot{border-end-start-radius:5px}
+.bf-ts{display:block;font-size:10px;color:var(--muted);margin-top:4px;text-align:end}
+.bf-sheet .bf-quick{padding:6px 12px}
+.bf-composer-wrap{padding:6px max(10px,3vw) max(10px,env(safe-area-inset-bottom));flex:0 0 auto}
+.bf-bs{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}
+.bf-bs .bf-b{margin:0;text-align:center}

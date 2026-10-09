@@ -234,7 +234,7 @@ function closeModal() {
 }
 function openModal(html, wide = false) {
   const sh = $("#sheet");
-  sh.classList.toggle("wide", wide);
+  sh.classList.toggle("wide", wide); sh.classList.remove("bf-sheet");
   sh.innerHTML = `<button class="x" id="xBtn" aria-label="إغلاق">${ic("close", 18)}</button>` + html;
   $("#modal").classList.remove("hidden"); layerOpen("modal", modalDom);
   $("#xBtn").onclick = closeModal;
@@ -641,7 +641,9 @@ applyTheme();
  * الحساب @t_i_j هو "بوت فازر" الموقع: أي حد يفتح محادثته (من البحث أو البروفايل) بيفتح الواجهة دي بدل محادثة مشفّرة عادية
  * (حساب جوجل عادي مفيش حاجة بترد منه). الأوامر بتكلّم /api/bot بتوكن الدخول بتاعك. */
 const BOTFATHER_USERNAME = "t_i_j";
-const BF = { log: [], state: null, busy: false };
+const BF = { log: (() => { try { return JSON.parse(localStorage.getItem("es_bf_log") || "[]").slice(-60); } catch { return []; } })(), state: null, busy: false };
+const bfSave = () => { try { localStorage.setItem("es_bf_log", JSON.stringify(BF.log.filter(m => !m.secret).slice(-60))); } catch {} };
+const bfTime = t => new Date(t || Date.now()).toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" });
 async function resolveBotFather() {
   if (S.bfUid !== undefined) return;
   S.bfUid = null;
@@ -667,16 +669,16 @@ async function botApi(payload) {
 function openBotFather() {
   const sh = openModal(`<div class="bf-head"><button type="button" class="sp-back" id="bfBack" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="bf-av">🤖</div><div class="bf-t"><b>ES BotFather ${botfatherBadge(16)}</b><small>البوت الرسمي لإنشاء وإدارة البوتات</small></div></div>
     <div class="bf-log" id="bfLog"></div><div class="bf-quick" id="bfQuick"></div>
-    <div class="bf-form"><input id="bfIn" placeholder="اكتب رد أو أمر (/help)" autocomplete="off" maxlength="600"><button type="button" class="btn-primary" id="bfSend">إرسال</button></div>`);
+    <div class="bf-composer-wrap"><form class="composer" id="bfForm"><input id="bfIn" placeholder="اكتب رسالة أو أمر (/help)" autocomplete="off" maxlength="600"><button type="submit" class="sendmic is-send" id="bfSend" aria-label="إرسال"><span class="i-send">${ic("send", 22)}</span></button></form></div>`);
   sh.classList.add("bf-sheet");
   const log = sh.querySelector("#bfLog"), quick = sh.querySelector("#bfQuick"), inp = sh.querySelector("#bfIn");
   const paint = () => {
-    log.innerHTML = BF.log.map(m => `<div class="bf-m ${m.me ? "me" : "bot"}">${m.html}</div>`).join("");
+    log.innerHTML = BF.log.map(m => `<div class="bf-m ${m.me ? "me" : "bot"}">${m.html}<span class="bf-ts">${bfTime(m.t)}</span></div>`).join("");
     log.scrollTop = log.scrollHeight;
     quick.innerHTML = [["newbot", "➕ بوت جديد"], ["mybots", "🤖 بوتاتي"], ["help", "❓ مساعدة"], ["cancel", "✖ إلغاء"]].map(([a, t]) => `<button type="button" data-a="${a}">${t}</button>`).join("");
   };
-  const say = html => { BF.log.push({ html }); if (BF.log.length > 80) BF.log.shift(); paint(); };
-  const me = t => { BF.log.push({ me: true, html: esc(t) }); paint(); };
+  const say = (html, secret) => { BF.log.push({ html, t: Date.now(), ...(secret || /bf-code/.test(html) ? { secret: true } : {}) }); if (BF.log.length > 80) BF.log.shift(); bfSave(); paint(); };
+  const me = t => { BF.log.push({ me: true, html: esc(t), t: Date.now() }); bfSave(); paint(); };
   const err = e => say(`⚠️ ${esc(e.message || "حصل خطأ")}`);
   const btn = (a, t, id) => `<button type="button" class="bf-b" data-a="${a}"${id ? ` data-id="${esc(id)}"` : ""}>${t}</button>`;
   const HELP = `الأوامر:<br>/newbot — إنشاء بوت جديد<br>/mybots — عرض وإدارة بوتاتك<br>/cancel — إلغاء العملية الحالية<br><br>البوت بينشر في المجموعات والقنوات اللي بتضيفه عليها بالتوكن (شوف docs/BOT_API_AR.md). البوتات مش بتبعت في المحادثات الخاصة (عشان التشفير).`;
@@ -745,8 +747,7 @@ function openBotFather() {
     } catch (e) { err(e); } finally { BF.busy = false; }
   };
   sh.querySelector("#bfBack").onclick = closeModal;
-  sh.querySelector("#bfSend").onclick = submit;
-  inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
+  sh.querySelector("#bfForm").onsubmit = e => { e.preventDefault(); submit().finally(() => inp.focus()); };
   const onclk = e => { const b = e.target.closest("[data-a]"); if (b) act(b.dataset.a, b.dataset.id); };
   log.onclick = onclk; quick.onclick = onclk;
 }
@@ -1522,26 +1523,59 @@ async function openMessageInfo(mid) {
     sh.querySelector("#miList").innerHTML = list.slice(0, 100).map(x => { const u=S.users.get(x.uid)||{name:"مستخدم"}; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}</div><small>${fmtDT(x.at)}</small></div></div>`; }).join("");
   } catch (e) { sh.querySelector("#miLoad").textContent = "لا توجد معلومات متاحة أو لا تسمح قواعد الخصوصية بعرضها."; }
 }
+const TZ_COUNTRY = { "Africa/Cairo": "مصر", "Africa/Khartoum": "السودان", "Asia/Aden": "اليمن", "Asia/Riyadh": "السعودية", "Asia/Dubai": "الإمارات", "Asia/Kuwait": "الكويت", "Asia/Qatar": "قطر", "Asia/Bahrain": "البحرين", "Asia/Muscat": "عمان", "Asia/Baghdad": "العراق", "Asia/Amman": "الأردن", "Asia/Beirut": "لبنان", "Asia/Damascus": "سوريا", "Asia/Gaza": "فلسطين", "Asia/Hebron": "فلسطين", "Africa/Tripoli": "ليبيا", "Africa/Tunis": "تونس", "Africa/Algiers": "الجزائر", "Africa/Casablanca": "المغرب", "Europe/London": "بريطانيا", "Europe/Berlin": "ألمانيا", "Europe/Paris": "فرنسا", "Europe/Istanbul": "تركيا", "America/New_York": "أمريكا", "America/Chicago": "أمريكا", "America/Los_Angeles": "أمريكا", "America/Toronto": "كندا" };
+const tzName = tz => TZ_COUNTRY[tz] || (tz ? tz.split("/").pop().replace(/_/g, " ") : "غير معروف");
+function lineChartSvg(series, labels) {
+  const W = 340, H = 170, pl = 28, pr = 8, pt = 10, pb = 22, n = labels.length;
+  const all = series.flatMap(s => s.v), mx = Math.max(5, ...all), mn = Math.min(0, ...all), rg = (mx - mn) || 1;
+  const X = i => pl + (n <= 1 ? 0 : i * (W - pl - pr) / (n - 1)), Y = v => pt + (H - pt - pb) * (1 - (v - mn) / rg);
+  const grid = [mn, mn + rg / 2, mx].map(v => `<line x1="${pl}" x2="${W - pr}" y1="${Y(v)}" y2="${Y(v)}" stroke="currentColor" opacity=".13"/><text x="${pl - 4}" y="${Y(v) + 3}" font-size="9" text-anchor="end" fill="currentColor" opacity=".6">${Math.round(v)}</text>`).join("");
+  const lines = series.map(s => `<polyline fill="none" stroke="${s.c}" stroke-width="2" stroke-linejoin="round" points="${s.v.map((v, i) => X(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ")}"/>`).join("");
+  const xl = [0, Math.floor((n - 1) / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i).map(i => `<text x="${X(i)}" y="${H - 6}" font-size="9" text-anchor="middle" fill="currentColor" opacity=".6">${labels[i]}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="direction:ltr;color:var(--muted)">${grid}${lines}${xl}</svg>`;
+}
+function donutSvg(a, b) {
+  const t = a + b || 1, r = 38, C = 2 * Math.PI * r, da = C * a / t;
+  return `<svg viewBox="0 0 100 100" width="120" height="120"><circle cx="50" cy="50" r="${r}" fill="none" stroke="#ffb02e" stroke-width="12"/><circle cx="50" cy="50" r="${r}" fill="none" stroke="#fff" stroke-width="12" stroke-dasharray="${da} ${C - da}" transform="rotate(-90 50 50)"/></svg>`;
+}
+const regionBars = (counts, total) => { const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5); return rows.length ? rows.map(([k, v]) => { const p = total ? v / total * 100 : 0; return `<div class="cs-reg"><div class="cs-reg-h"><span>${esc(k)}</span><b>${v} · ${p.toFixed(1)}%</b></div><div class="cs-bar"><i style="width:${p.toFixed(1)}%"></i></div></div>`; }).join("") : `<div class="hint">لسه مفيش بيانات كفاية.</div>`; };
 async function openChannelStats(g) {
   if (!g || g.kind !== "channel" || !isGAdmin(g)) return;
-  const sh = openModal(`<div class="menu"><div class="menu-h">إحصائيات القناة</div><div class="stats-tabs"><button class="on" data-st="overview">نظرة عامة</button><button data-st="posts">المنشورات</button><button data-st="audience">الجمهور</button><button data-st="growth">النمو</button></div><div id="csBody"><div class="empty-list">جاري الحساب...</div></div><p class="hint">الأرقام مبنية على البيانات المتاحة في التطبيق، وتتحدث مع فتح القناة أو تفاعل المستخدمين. لا تعرض أسماء المتابعين أو أرقامهم.</p></div>`);
-  let analytics = [], messages = [];
+  const sh = openModal(`<div class="menu"><div class="menu-h">إحصائيات القناة</div><div class="stats-tabs"><button class="on" data-st="reach">الوصول</button><button data-st="growth">النمو</button><button data-st="followers">المتابعون</button><button data-st="posts">المنشورات</button></div><div class="cs-range">آخر 30 يوم</div><div id="csBody"><div class="empty-list">جاري الحساب...</div></div><p class="hint">الأرقام من سجل الأحداث اللي بيتسجّل من وقت تحديث النسخة دي. الدولة تقديرية من توقيت جهاز المستخدم، ومفيش عرض لأسماء أو أرقام.</p></div>`);
+  const since = Date.now() - 30 * 864e5;
+  let ev = [], messages = [], analytics = [];
+  try { ev = (await getDocs(query(collection(db, "groups", g.id, "events"), where("at", ">=", new Date(since)), orderBy("at", "desc"), limit(3000)))).docs.map(x => x.data()); } catch (e) { console.error(e); }
   try { analytics = (await getDocs(collection(db, "groups", g.id, "analytics"))).docs.map(x => x.data()); } catch {}
-  try { messages = (await getDocs(query(collection(db, "groups", g.id, "messages"), orderBy("at", "desc"), limit(150)))).docs.map(x => ({ id:x.id, ...x.data() })); } catch {}
-  const body = sh.querySelector("#csBody");
+  try { messages = (await getDocs(query(collection(db, "groups", g.id, "messages"), orderBy("at", "desc"), limit(60)))).docs.map(x => ({ id: x.id, ...x.data() })); } catch {}
+  const days = [], key = d => d.toISOString().slice(5, 10);
+  for (let i = 29; i >= 0; i--) days.push(new Date(Date.now() - i * 864e5));
+  const idx = new Map(days.map((d, i) => [key(d), i])), labels = days.map(d => (d.getMonth() + 1) + "/" + d.getDate());
+  const joins = Array(30).fill(0), leaves = Array(30).fill(0), reachDay = Array(30).fill(0);
+  const uniqNon = new Set(), uniqMem = new Set(), regReach = {};
+  ev.forEach(e => { const t = toDate(e.at); if (!t) return; const i = idx.get(key(t)); if (i === undefined) return;
+    if (e.type === "join") joins[i]++; else if (e.type === "leave") leaves[i]++;
+    else if (e.type === "open") { reachDay[i]++; (e.m ? uniqMem : uniqNon).add(e.uid); const r = tzName(e.tz); regReach[r] = (regReach[r] || 0) + 1; } });
+  const sum = a => a.reduce((x, y) => x + y, 0), J = sum(joins), L = sum(leaves), net = J - L, total = (g.members || []).length;
+  const reachTotal = uniqMem.size + uniqNon.size;
+  const prev = total - net, pct = prev > 0 ? (net / prev * 100) : 0;
+  const stat = (n, t) => `<div class="stat"><b>${n}</b><span>${t}</span></div>`;
   const render = tab => {
     sh.querySelectorAll("[data-st]").forEach(b => b.classList.toggle("on", b.dataset.st === tab));
-    const now=Date.now(), d7=now-7*864e5, d30=now-30*864e5;
-    const active7=analytics.filter(x => (toDate(x.lastOpen)?.getTime()||0)>=d7).length;
-    const active30=analytics.filter(x => (toDate(x.lastOpen)?.getTime()||0)>=d30).length;
-    const new7=analytics.filter(x => (toDate(x.firstOpen)?.getTime()||0)>=d7).length;
-    const new30=analytics.filter(x => (toDate(x.firstOpen)?.getTime()||0)>=d30).length;
-    if(tab === "overview") body.innerHTML=`<div class="stats"><div class="stat"><b>${g.members?.length||0}</b><span>إجمالي المتابعين</span></div><div class="stat"><b>${new7}</b><span>متابعون جدد آخر 7 أيام</span></div><div class="stat"><b>${new30}</b><span>متابعون جدد آخر 30 يوم</span></div><div class="stat"><b>${active30}</b><span>نشطون آخر 30 يوم</span></div><div class="stat"><b>${analytics.reduce((a,x)=>a+Number(x.opens||0),0)}</b><span>مرات فتح القناة</span></div><div class="stat"><b>${g.lastAt?fmtDT(g.lastAt):"—"}</b><span>آخر منشور</span></div></div>`;
-    else if(tab === "posts") body.innerHTML=messages.length?`<div class="stats"><div class="stat"><b>${messages.length}</b><span>آخر منشورات محمّلة</span></div><div class="stat"><b>${messages.reduce((a,m)=>a+Object.keys(m.reactions||{}).length,0)}</b><span>تفاعلات عليها</span></div><div class="stat"><b>${messages.filter(m=>m.fwd).length}</b><span>منشورات معاد توجيهها</span></div></div><div class="panel-h">آخر المنشورات</div>`+messages.slice(0,20).map(m=>`<div class="row-item"><div class="meta"><div class="name">${esc(m.text?m.text.slice(0,80):m.poll?"📊 استفتاء":m.img?"📷 صورة":"منشور")}</div><small>${fmtDT(m.at)} · ${Object.keys(m.reactions||{}).length} تفاعل</small></div></div>`).join(""):"<div class=empty-list>لا توجد منشورات كافية.</div>";
-    else if(tab === "audience") body.innerHTML=`<div class="stats"><div class="stat"><b>${active7}</b><span>نشطون آخر 7 أيام</span></div><div class="stat"><b>${active30}</b><span>نشطون آخر 30 يوم</span></div><div class="stat"><b>—</b><span>أكثر الدول: غير مفعّل</span></div><div class="stat"><b>—</b><span>ساعات النشاط: قيد التجميع</span></div></div><p class="hint">لا يتم جمع الدولة أو الموقع الجغرافي حاليًا حفاظًا على الخصوصية.</p>`;
-    else body.innerHTML=`<div class="stats"><div class="stat"><b>${new7}</b><span>نمو مسجل آخر 7 أيام</span></div><div class="stat"><b>${new30}</b><span>نمو مسجل آخر 30 يوم</span></div><div class="stat"><b>—</b><span>إلغاء المتابعة: غير مسجل في النسخة الحالية</span></div><div class="stat"><b>24 ساعة</b><span>دورة تحديث المؤشرات</span></div></div><p class="hint">سيظهر صافي النمو بعد تفعيل سجل دخول/خروج المتابعين على مستوى الأحداث.</p>`;
+    const body = sh.querySelector("#csBody");
+    if (tab === "reach") body.innerHTML = `<div class="cs-big">${reachTotal}</div><div class="cs-sub">حسابات وصلتلها القناة</div>
+      <div class="cs-donut">${donutSvg(uniqMem.size, uniqNon.size)}<div class="cs-leg"><div><i style="background:#fff"></i>متابعون <b>${uniqMem.size}</b> · ${reachTotal ? (uniqMem.size / reachTotal * 100).toFixed(1) : 0}%</div><div><i style="background:#ffb02e"></i>غير متابعين <b>${uniqNon.size}</b> · ${reachTotal ? (uniqNon.size / reachTotal * 100).toFixed(1) : 0}%</div></div></div>
+      <div class="panel-h">فتحات يوميًا</div>${lineChartSvg([{ v: reachDay, c: "#4fb8ee" }], labels)}
+      <div class="panel-h">أعلى الدول</div>${regionBars(regReach, sum(Object.values(regReach)))}`;
+    else if (tab === "growth") body.innerHTML = `<div class="cs-leg2"><div><i style="background:#4fb8ee"></i>صافي المتابعة <b>${net}</b></div><div><i style="background:#fff"></i>متابعات <b>${J}</b></div><div><i style="background:#ff6b81"></i>إلغاء متابعة <b>${L}</b></div></div>
+      ${lineChartSvg([{ v: joins.map((v, i) => v - leaves[i]), c: "#4fb8ee" }, { v: joins, c: "#fff" }, { v: leaves, c: "#ff6b81" }], labels)}`;
+    else if (tab === "followers") { const reg = {}; /* توزيع المتابعين بحسب آخر دولة معروفة من أحداثهم */ const seen = new Set(); ev.forEach(e => { if (e.m && !seen.has(e.uid)) { seen.add(e.uid); const r = tzName(e.tz); reg[r] = (reg[r] || 0) + 1; } });
+      const d7 = Date.now() - 7 * 864e5, act7 = analytics.filter(x => (toDate(x.lastOpen)?.getTime() || 0) >= d7).length;
+      body.innerHTML = `<div class="cs-big">${total}</div><div class="cs-sub"><span class="${net >= 0 ? "up" : "down"}">${net >= 0 ? "+" : ""}${pct.toFixed(1)}%</span> خلال آخر 30 يوم</div>
+        <div class="stats">${stat(act7, "نشطون آخر 7 أيام")}${stat(analytics.length, "متابعون فتحوا القناة")}</div>
+        <div class="panel-h">أعلى الدول (من المتابعين النشطين)</div>${regionBars(reg, seen.size)}`; }
+    else body.innerHTML = messages.length ? `<div class="stats">${stat(messages.length, "آخر منشورات محمّلة")}${stat(messages.reduce((a, m) => a + Object.keys(m.reactions || {}).length, 0), "تفاعلات")}${stat(messages.filter(m => m.poll).length, "استفتاءات")}</div><div class="panel-h">أحدث المنشورات</div>` + messages.slice(0, 20).map(m => `<div class="row-item"><div class="meta"><div class="name">${esc(m.text ? m.text.slice(0, 80) : m.poll ? "📊 استفتاء" : m.img ? "📷 صورة" : "منشور")}</div><small>${fmtDT(m.at)} · ${Object.keys(m.reactions || {}).length} تفاعل</small></div></div>`).join("") : `<div class="empty-list">لا توجد منشورات كافية.</div>`;
   };
-  render("overview"); sh.querySelectorAll("[data-st]").forEach(b=>b.onclick=()=>render(b.dataset.st));
+  render("reach"); sh.querySelectorAll("[data-st]").forEach(b => b.onclick = () => render(b.dataset.st));
 }
 /* قايمة الرسالة */
 function openMsgMenu(mid) {
@@ -2122,6 +2156,28 @@ async function hydrateLinkCards() {
 const shareOrCopy = (url, title, ok) => (navigator.share ? navigator.share({ title, url }).catch(e => { if (e && e.name !== "AbortError") copyText(url, ok); }) : copyText(url, ok));
 function closeChatSubs() { ["msgs", "peerDoc", "chatDoc", "gdoc"].forEach(k => { if (S.unsub[k]) { S.unsub[k](); delete S.unsub[k]; } }); }
 
+
+/* ---- تسجيل أحداث القناة (للإحصائيات): فتح / انضمام / مغادرة ---- */
+const TZ = (() => { try { return String(Intl.DateTimeFormat().resolvedOptions().timeZone || "").slice(0, 40); } catch { return ""; } })();
+function logChanEvent(gid, type, extra = {}) {
+  if (!S.user) return Promise.resolve();
+  return addDoc(collection(db, "groups", gid, "events"), { uid: S.user.uid, type, at: serverTimestamp(), tz: TZ, ...extra }).catch(() => {});
+}
+function trackChannelOpen(g) {
+  try {
+    if (!g || g.kind !== "channel" || !S.user) return;
+    const day = new Date().toISOString().slice(0, 10), k = "chopen_" + g.id + "_" + S.user.uid;
+    if (localStorage.getItem(k) === day) return; localStorage.setItem(k, day);
+    const member = isGMember(g);
+    logChanEvent(g.id, "open", { m: member });
+    if (member) {
+      const ref = doc(db, "groups", g.id, "analytics", S.user.uid);
+      getDoc(ref).then(s => s.exists()
+        ? updateDoc(ref, { opens: increment(1), lastOpen: serverTimestamp() })
+        : setDoc(ref, { uid: S.user.uid, opens: 1, firstOpen: serverTimestamp(), lastOpen: serverTimestamp() })).catch(() => {});
+    }
+  } catch {}
+}
 async function fetchGroup(gid) {
   let g = S.groups.find(x => x.id === gid);
   if (g) return g;
@@ -2131,7 +2187,7 @@ async function openGroup(gid) {
   const g = await fetchGroup(gid);
   if (!g) return toast("المجموعة أو القناة مش موجودة");
   if (!isGMember(g) && !(g.kind === "channel" && g.public)) return openJoin(g);
-  closeChatSubs(); clearTimeout(S.typT);
+  closeChatSubs(); clearTimeout(S.typT); trackChannelOpen(g);
   S.chat = { id: gid, type: g.kind, peer: null, group: g, first: true, reply: null, doc: null, sig: "", cleaned: new Set(), lastTyping: undefined, typingAt: 0, sentTyping: 0, sentRead: 0 };
   $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open"); layerOpen("chat", chatUiClose);
   $("#messages").innerHTML = ""; paintReply(); hideQuick(); markRead(gid); applyComposerState(); paintHead(); renderList();
@@ -2166,7 +2222,7 @@ async function joinGroup(g) {
     return false;
   }
   b.update(doc(db, "groups", g.id), { members: arrayUnion(me) });
-  try { await b.commit(); toast(g.kind === "channel" ? "بقيت متابع للقناة" : "اتضمّيت للمجموعة"); return true; }
+  try { await b.commit(); if (g.kind === "channel") logChanEvent(g.id, "join"); toast(g.kind === "channel" ? "بقيت متابع للقناة" : "اتضمّيت للمجموعة"); return true; }
   catch (e) { console.error(e); toast("تعذّر الانضمام (ممكن الرابط اتقفل أو اتغيّر أو العدد اكتمل). اطلب رابط جديد من مشرف."); return false; }
 }
 async function acceptAdminInvite(str) {
@@ -2193,7 +2249,7 @@ async function leaveGroup(g) {
     if (!confirm("هتنقل الملكية لـ " + ((S.users.get(next) || {}).name || "عضو") + " وتخرج. متأكد؟")) return;
     patch = { owner: next, members: mem.filter(x => x !== me), admins: [...new Set([...(g.admins || []).filter(x => x !== me), next])] };
   } else if (!confirm(g.kind === "channel" ? "تلغي متابعة القناة؟" : "تخرج من المجموعة؟")) return;
-  try { await updateDoc(doc(db, "groups", g.id), patch); closeModal(); if (S.chat && S.chat.id === g.id) showEmpty(); toast("تم"); }
+  try { await updateDoc(doc(db, "groups", g.id), patch); if (g.kind === "channel") logChanEvent(g.id, "leave"); closeModal(); if (S.chat && S.chat.id === g.id) showEmpty(); toast("تم"); }
   catch { toast("تعذّر الخروج"); }
 }
 
@@ -2312,9 +2368,11 @@ async function openGroupInfo(gid) {
       <div class="end">${owner && id !== me ? `<button class="btn-mini ghost" data-pro="${esc(id)}">${(g.admins || []).includes(id) ? "إلغاء الإشراف" : "ترقية"}</button>` : ""}${admin && !ch && canRm && !(g.admins || []).includes(id) ? `<button class="btn-mini ghost" data-mu="${esc(id)}">${g.muted && +g.muted[id] > Date.now() ? "إلغاء الكتم" : "كتم"}</button>` : ""}${canRm ? `<button class="btn-danger sm" data-rm="${esc(id)}">إزالة</button>` : ""}</div></div>`; }).join("");
   const sh = openModal(`<div class="prof">${gAvatar(g, "big")}<h3>${esc(g.name)}</h3>
       <div class="chips"><span class="chip">${ch ? "قناة" : "مجموعة"}</span><span class="chip">${gCount(g)}</span>${g.handle ? `<span class="chip"><bdi>#${esc(g.handle)}</bdi></span>` : ""}</div>
-      ${g.desc ? `<div class="bio">${esc(g.desc)}</div>` : ""}
+      ${ch ? `<div class="ci-tiles">${admin ? `<button type="button" class="ci-tile" id="giStats"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>الإحصائيات</span></button>` : ""}<button type="button" class="ci-tile" id="giShare"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14"/></svg><span>مشاركة</span></button><button type="button" class="ci-tile" id="giSearch"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>بحث</span></button></div>
+      <div class="ci-card"><div class="ci-k">الوصف</div><div class="ci-v">${g.desc ? esc(g.desc) : "<span class='hint'>مفيش وصف</span>"}</div>${g.joinOpen ? `<div class="ci-k">رابط الدعوة</div><div class="ci-v ci-link"><bdi dir="ltr">${esc(inviteLink(g).replace(/^https?:\/\//, ""))}</bdi></div>` : ""}</div>
+      <div class="ci-card ci-stats"><div class="ci-row"><span>المتابعون</span><b>${(g.members || []).length}</b></div><div class="ci-row"><span>المشرفون</span><b>${(g.admins || []).length + 1}</b></div></div>` : g.desc ? `<div class="bio">${esc(g.desc)}</div>` : ""}
       <div class="actions">${g.joinOpen ? `<button class="btn-ghost" id="giLink">نسخ رابط الدعوة</button>` : ""}${admin && !(ch && g.public) ? `<button class="btn-ghost" id="giReset">إعادة تعيين الرابط</button>` : ""}${owner ? `<button class="btn-ghost" id="giAi">رابط دعوة مشرف</button><button class="btn-ghost" id="giAiX">إلغاء روابط المشرفين</button>` : ""}${admin ? `<button class="btn-primary" id="giEdit">تعديل</button>` : ""}</div></div>
-    ${admin && ch ? `<div class="actions"><button class="btn-ghost" id="giStats">إحصائيات القناة</button></div><div class="panel-h">الإعدادات</div>${owner ? switchRow("giVer", !!g.verified, "قناة موثقة داخل ES Chat", "شارة زرقاء داخل موقعك فقط، وليست توثيق Meta أو واتساب") : ""}${switchRow("giOpen", !!g.joinOpen, "رابط الدعوة شغال", "لو اتقفل محدش يقدر ينضم بالرابط")}${switchRow("giRe", !g.noReact, "التفاعل بالإيموجي", "الأعضاء يقدروا يتفاعلوا على الرسايل")}${ch ? switchRow("giPub", !!g.public, "قناة عامة", "تظهر في استكشاف القنوات") : switchRow("giSend", !!g.sendAdmins, "الإرسال للمشرفين فقط", "باقي الأعضاء بيقروا بس") + switchRow("giApr", !!g.approve, "الموافقة على الأعضاء الجدد", "اللي ينضم بالرابط لازم مشرف يوافق عليه")}
+    ${admin && ch ? `<div class="panel-h">الإعدادات</div>${owner ? switchRow("giVer", !!g.verified, "قناة موثقة داخل ES Chat", "شارة زرقاء داخل موقعك فقط، وليست توثيق Meta أو واتساب") : ""}${switchRow("giOpen", !!g.joinOpen, "رابط الدعوة شغال", "لو اتقفل محدش يقدر ينضم بالرابط")}${switchRow("giRe", !g.noReact, "التفاعل بالإيموجي", "الأعضاء يقدروا يتفاعلوا على الرسايل")}${ch ? switchRow("giPub", !!g.public, "قناة عامة", "تظهر في استكشاف القنوات") : switchRow("giSend", !!g.sendAdmins, "الإرسال للمشرفين فقط", "باقي الأعضاء بيقروا بس") + switchRow("giApr", !!g.approve, "الموافقة على الأعضاء الجدد", "اللي ينضم بالرابط لازم مشرف يوافق عليه")}
       <div class="field" style="margin-top:14px"><label for="giAdd">إضافة ${ch ? "متابع" : "عضو"} باليوزر</label><div class="inline-add"><input type="text" id="giAdd" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-mini" id="giAddBtn">إضافة</button></div><div class="hint" id="giH"></div></div>${ch ? `<div class="field" style="margin-top:14px"><label for="giRm">إزالة متابع باليوزر</label><div class="inline-add"><input type="text" id="giRm" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-danger sm" id="giRmBtn">إزالة</button></div><div class="hint" id="giRmH">القايمة مخفية، فالإزالة بتتم باليوزر. وتقدر تمنعه من الرجوع بالرابط.</div></div>${owner ? `<div class="field" style="margin-top:14px"><label for="giPr">ترقية مشرف باليوزر</label><div class="inline-add"><input type="text" id="giPr" placeholder="username" autocapitalize="none" style="direction:ltr;text-align:end"><button class="btn-mini" id="giPrBtn">ترقية</button></div><div class="hint" id="giPrH">لازم يكون متابع. أقصى عدد مشرفين 15 + المالك.</div></div>` : ""}` : ""}` : ""}
     ${reqHtml}${banHtml}
     <div class="panel-h">${ch ? "المشرفين" : "الأعضاء"}</div>${!ch && ids.length > 8 ? `<div class="field"><input type="text" id="giFind" placeholder="بحث في الأعضاء..." autocomplete="off"></div>` : ""}<div id="giList">${rows}</div>${ch ? `<div class="hint">${gCount(g)} · قايمة المتابعين مخفية للخصوصية (حتى عن المشرفين)</div>` : (g.members || []).length > 100 ? `<div class="hint">عرض أول 100 فقط</div>` : ""}
@@ -2338,6 +2396,8 @@ async function openGroupInfo(gid) {
     catch { toast("تعذّر الإلغاء"); }
   };
   const gst = q("#giStats"); if (gst) gst.onclick = () => openChannelStats(g);
+  const gsh = q("#giShare"); if (gsh) gsh.onclick = () => shareOrCopy(inviteLink(g), g.name || "ES Chat Pro", "اتنسخ رابط القناة");
+  const gse = q("#giSearch"); if (gse) gse.onclick = () => { closeModal(); if (S.chat && S.chat.id === gid) setTimeout(openChatSearch, 80); else toast("افتح القناة الأول"); };
   const gv = q("#giVer"); if (gv) gv.onchange = async e => { const next = e.target.checked; try { await updateDoc(doc(db, "groups", gid), { verified: next }); await setDoc(doc(db, "groupDirectory", gid), { verified: next }, { merge: true }); openGroupInfo(gid); } catch { e.target.checked = !next; toast("تعذّر حفظ التوثيق"); } };
   const ed = q("#giEdit"); if (ed) ed.onclick = () => openEditGroup(g);
   const o = q("#giOpen"); if (o) o.onchange = e => up({ joinOpen: e.target.checked });
