@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=30">
+<link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
 
@@ -116,17 +116,26 @@
 <div id="netBar" class="net-bar hidden">مفيش اتصال بالنت — الرسايل هتتبعت أول ما يرجع</div>
 
 <script>
-  // لو فشل تحميل module (غالبًا ملف firebase-config.js ناقص)، لا تترك المستخدم على الشعار.
-  setTimeout(() => {
-    const b = document.getElementById("boot"), e = document.getElementById("bootError");
-    if (b && !b.classList.contains("hidden") && e) {
-      e.hidden = false;
-      e.textContent = "التطبيق لم يكتمل تحميله. تأكد من رفع firebase-config.js ثم أعد تحميل الصفحة.";
-    }
-  }, 8000);
+  // مراقب الإقلاع: ما يعرضش رسالة "firebase-config" إلا لو الملف فعلًا فشل يتحمّل.
+  // لو التطبيق اشتغل (window.__esBooted) وبس بطيء في تجهيز الحساب الجديد، نعرض رسالة انتظار هادية مش خطأ.
+  (function () {
+    var t0 = Date.now();
+    var iv = setInterval(function () {
+      var b = document.getElementById("boot"), e = document.getElementById("bootError");
+      if (!b || b.classList.contains("hidden")) { if (e) e.hidden = true; if (Date.now() - t0 > 3000) clearInterval(iv); return; }
+      var el = Date.now() - t0;
+      if (!window.__esBooted && el > 15000 && e) {
+        e.hidden = false; e.className = "login-msg";
+        e.textContent = "الصفحة بتتحمّل ببطء. اتأكد من النت وأعد تحميل الصفحة.";
+      } else if (window.__esBooted && el > 6000 && e) {
+        e.hidden = false; e.className = "login-msg boot-wait";
+        e.textContent = "جاري تجهيز حسابك… لحظات.";
+      }
+    }, 500);
+  })();
 </script>
 <script type="module">
-  import("./app.js?v=33").catch(err => {
+  import("./app.js?v=34").catch(err => {
     const e = document.getElementById("bootError");
     if (e) {
       e.hidden = false;

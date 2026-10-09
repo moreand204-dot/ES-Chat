@@ -7,6 +7,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 import * as CFG from "./firebase-config.js";
 import { initE2EEDevice, encryptPrivatePayload, decryptPrivatePayload, encryptSharedPayload, decryptSharedPayload } from "./e2ee.js";
 const { firebaseConfig, OWNER_EMAIL } = CFG;
+window.__esBooted = true; // الإعدادات اتحمّلت سليمة (مراقب الإقلاع في index.html بيعتمد عليها)
 const VAPID_KEY = CFG.VAPID_KEY || "";
 
 /* ---------------- helpers ---------------- */
@@ -206,9 +207,11 @@ const isOwner = () => isOwnerUser(S.user);
 
 function show(view) {
   S.view = view;
+  { const be = $("#bootError"); if (be) be.hidden = true; }
   for (const id of ["boot", "login", "onboard", "banned", "notice", "app"]) $("#" + id).classList.toggle("hidden", id !== view);
 }
 /* ---- طبقات التنقل: زر الرجوع في النظام بيقفل آخر طبقة (نافذة / محادثة / تبويب) بدل ما يخرّجك من الموقع ---- */
+var _ownTimer = 0;
 const LAYERS = []; let ignorePop = 0; const deferred = [];
 function layerOpen(id, close) {
   const e = LAYERS.find(l => l.id === id); if (e) { e.close = close; return; }
@@ -224,7 +227,7 @@ addEventListener("popstate", () => {
   if (ignorePop > 0) { ignorePop--; if (!ignorePop) deferred.splice(0).forEach(f => f()); return; }
   const l = LAYERS.pop(); if (l) l.close();
 });
-function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "att-sheet", "emo-sheet"); }
+function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "att-sheet", "emo-sheet", "owner-sheet"); clearInterval(_ownTimer); }
 function closeModal() {
   const was = !$("#modal").classList.contains("hidden"); modalDom();
   if (was) setTimeout(() => { if ($("#modal").classList.contains("hidden")) layerClose("modal"); }, 0);
@@ -276,7 +279,7 @@ if (!configured) {
   countVisit();
   getRedirectResult(auth).catch(loginError);
   onAuthStateChanged(auth, onAuth);
-  setTimeout(() => { if (S.view === "boot") fail(Object.assign(new Error("boot"), { code: "timeout" })); }, 20000);
+  setTimeout(() => { if (S.view === "boot") fail(Object.assign(new Error("boot"), { code: "timeout" })); }, 45000);
 }
 
 function countVisit() {
@@ -1152,7 +1155,7 @@ function groupRow(g, um, P, PIN, MUTE) {
   const n = um[g.id] || 0, muted = P.mute.includes(g.id);
   const dots = (P.cl[g.id] || []).map(id => P.labels.find(l => l.id === id)).filter(Boolean).map(l => `<i class="ldot" style="background:${esc(l.c)}"></i>`).join("");
   const last = g.lastText ? (g.lastUid === S.user.uid ? "أنت: " : (g.kind === "group" && g.lastName ? g.lastName + ": " : "")) + g.lastText : (g.kind === "channel" ? "قناة · " : "مجموعة · ") + gCount(g);
-  return `<div class="chat-item ${S.chat && S.chat.id === g.id ? "active" : ""} ${n ? "has-unread" : ""}" data-open="g:${esc(g.id)}" data-chat="1">${gAvatar(g)}
+  return `<div class="chat-item ${g.kind === "channel" ? "ch-card" : ""} ${S.chat && S.chat.id === g.id ? "active" : ""} ${n ? "has-unread" : ""}" data-open="g:${esc(g.id)}" data-chat="1">${g.kind === "channel" ? `<span class="ch-ring sm">${gAvatar(g)}</span>` : gAvatar(g)}
     <div class="chat-meta"><div class="row1"><div class="name">${g.kind === "channel" ? CHAN_IC : ""}${esc(g.name)}${g.verified ? badge(g, 14) : ""}${dots}</div><span class="when">${esc(listTime(g.lastAt || g.createdAt))}</span></div>
     <div class="row2"><div class="preview">${esc(last)}</div>${P.pins.includes(g.id) ? PIN : ""}${muted ? MUTE : ""}${n ? `<b class="unread ${muted ? "muted" : ""}">${n > 99 ? "99+" : n}</b>` : ""}</div></div></div>`;
 }
@@ -1396,7 +1399,9 @@ function renderMsgsPlain(docs) {
   if (pub) ensureUsers(vis.map(([, m]) => m.uid)).then(ch => { if (ch && S.chat && (S.chat.type === "public" || S.chat.type === "group")) renderMsgs(S.chat.lastDocs); });
   const stars = new Set(S.prefs.stars.map(s => s.c + "/" + s.m));
   const more = !c.noMore && (c.all ? c.all.size : docs.length) >= MSG_PAGE;
-  let last = "", h = notice + (more ? `<button type="button" class="older" id="olderBtn">تحميل رسايل أقدم</button>` : ""), pu = "", pt = 0, lastMs = 0, lastUid = "";
+  const isCh = c.type === "channel", cg = isCh ? c.group : null;
+  const hero = isCh && cg && !more ? `<div class="ch-hero"><div class="ch-ring">${gAvatar(cg, "big")}</div><h3>${esc(cg.name)}${cg.verified ? badge(cg, 18) : ""}</h3><div class="ch-hero-meta"><span class="ch-pill"><i class="ch-live"></i>قناة</span><span class="ch-pill">${esc(gCount(cg))}</span>${cg.handle ? `<span class="ch-pill"><bdi>#${esc(cg.handle)}</bdi></span>` : ""}</div>${cg.desc ? `<p>${esc(cg.desc)}</p>` : ""}</div>` : "";
+  let last = "", h = notice + (more ? `<button type="button" class="older" id="olderBtn">تحميل رسايل أقدم</button>` : "") + hero, pu = "", pt = 0, lastMs = 0, lastUid = "";
   for (const [d, m] of vis) {
     const dt = toDate(m.at) || new Date(), mine = m.uid === me;
     const lbl = dayLabel(dt); if (lbl !== last) { h += `<div class="date-sep">${esc(lbl)}</div>`; last = lbl; pu = ""; }
@@ -1430,6 +1435,13 @@ function renderMsgsPlain(docs) {
     }
     const seen = peerRead && peerRead.getTime() >= dt.getTime();
     const tick = mine && c.peer && !m.deleted ? (S.me.readReceipts === false ? TK1 : seen ? TK2 : TK1) : "";
+    if (isCh) {
+      const st = stars.has(c.id + "/" + d.id) ? `<span class="star">${ic("star", 11, "fill")}</span>` : "";
+      const acts = m.deleted ? "" : `${cg && cg.noReact ? "" : `<button type="button" class="post-btn" data-pm aria-label="تفاعل">☺<b>+</b></button>`}<button type="button" class="post-btn" data-pm aria-label="خيارات"><svg width="16" height="16" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg></button>`;
+      h += `<div class="msg them post${m.deleted ? " gone" : ""}${m.sticker && !m.deleted && !m.text ? " stk" : ""}" data-mid="${esc(d.id)}"><div class="post-h">${cg ? gAvatar(cg, "tiny") : ""}<b>${cg ? esc(cg.name) : ""}</b>${cg && cg.verified ? badge(cg, 13) : ""}<span class="post-time">${fmtTime(dt)}</span></div>`
+        + body + `<div class="post-f">${st}<span class="post-sp"></span>${acts}</div></div>`;
+      continue;
+    }
     h += `<div class="msg ${mine ? "me" : "them"}${cont ? " cont" : ""}${m.deleted ? " gone" : ""}${m.sticker && !m.deleted && !m.text ? " stk" : ""}" data-mid="${esc(d.id)}">`
       + (pub && !mine && !cont ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : "")
       + body + `<div class="tm">${stars.has(c.id + "/" + d.id) ? `<span class="star">${ic("star", 11, "fill")}</span>` : ""}<span>${fmtTime(dt)}</span>${tick}</div></div>`;
@@ -1608,6 +1620,7 @@ $("#messages").addEventListener("click", e => {
   if (e.target.closest("#olderBtn")) return loadOlder();
   const w = e.target.closest("[data-uid]"); if (w) return openProfile(w.dataset.uid);
   const pv = e.target.closest("[data-vote]"); if (pv) { const mm = pv.closest("[data-mid]"); if (mm) voteTo(mm.dataset.mid, +pv.dataset.vote); return; }
+  const pm = e.target.closest("[data-pm]"); if (pm) { const mm = pm.closest("[data-mid]"); if (mm) openMsgMenu(mm.dataset.mid); return; }
   const rc = e.target.closest("[data-re]"); if (rc) { const mm = rc.closest("[data-mid]"); if (mm) reactTo(mm.dataset.mid, rc.dataset.re); return; }
   const q = e.target.closest("[data-q]"); if (q) return jumpTo(q.dataset.q);
   const im = e.target.closest("[data-img]"); if (im) return viewImage(im.src);
@@ -2518,13 +2531,26 @@ async function loadAllUsers(force) {
   catch (e) { console.error(e); toast("تعذّر قراءة المستخدمين"); _au.a = _au.a || []; }
   return _au.a;
 }
+const OWNER_TABS = [["overview", "نظرة عامة"], ["users", "المستخدمون"], ["reports", "البلاغات"], ["groups", "القنوات والمجموعات"], ["logins", "سجل الدخول"], ["settings", "إعدادات الموقع"]];
 async function openOwner(tab = "overview") {
   if (!isOwner()) return;
-  const sh = openModal(`<div class="tabs" id="tabs">
-      <button data-t="overview">نظرة عامة</button><button data-t="users">المستخدمون</button><button data-t="reports">البلاغات</button><button data-t="groups">القنوات والمجموعات</button><button data-t="logins">سجل الدخول</button><button data-t="settings">إعدادات الموقع</button></div>
-    <div id="pbody"><div class="empty-list">جاري التحميل...</div></div>`, true);
+  clearInterval(_ownTimer);
+  let sh = $("#sheet");
+  const fresh = !(sh.classList.contains("owner-sheet") && !$("#modal").classList.contains("hidden"));
+  if (fresh) {
+    sh = openModal(`<div class="op-head"><div class="op-bar"><span class="op-crown">${CROWN}</span><div><b>لوحة المالك</b><small>ES Chat Pro · تحكم كامل</small></div></div>
+      <div class="tabs" id="tabs">${OWNER_TABS.map(([k, t]) => `<button type="button" data-t="${k}">${t}</button>`).join("")}</div></div>
+      <div id="pbody" class="op-body"></div>`, true);
+    sh.classList.add("owner-sheet");
+    ownerSwipe(sh);
+  }
   const body = sh.querySelector("#pbody");
-  sh.querySelectorAll("[data-t]").forEach(b => { b.classList.toggle("on", b.dataset.t === tab); b.onclick = () => openOwner(b.dataset.t); });
+  body.innerHTML = `<div class="op-skel"><i></i><i></i><i></i><i></i></div>`;
+  body.scrollTop = 0;
+  sh.querySelectorAll("[data-t]").forEach(b => {
+    const on = b.dataset.t === tab; b.classList.toggle("on", on); b.onclick = () => openOwner(b.dataset.t);
+    if (on) { try { b.scrollIntoView({ inline: "center", block: "nearest", behavior: fresh ? "auto" : "smooth" }); } catch {} }
+  });
   const users = tab === "settings" || tab === "reports" || tab === "groups" ? (_au.a || []) : await loadAllUsers(tab === "overview");
   const row = (id, u, end) => `<div class="row-item" data-p="${esc(id)}">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}${badge(u, 15)}${u.banned ? ` <span class="tag-ban">موقوف</span>` : ""}</div><small><bdi>@${esc(u.username || "—")}</bdi> · ${esc(u.email || "")}</small></div><div class="end">${end}</div></div>`;
   const wire = () => body.querySelectorAll("[data-p]").forEach(r => r.onclick = () => openProfile(r.dataset.p, { fromPanel: true }));
@@ -2647,4 +2673,41 @@ async function openOwner(tab = "overview") {
     body.innerHTML = rows.map(r => row(r.uid, S.users.get(r.uid) || { name: r.name }, esc(fmtDT(r.at)))).join("") || `<div class="empty-list">مفيش سجل دخول لسه</div>`;
     wire();
   }
+  ownerAfter(sh, tab);
+}
+/* حركة وتنقل لوحة المالك: عدّاد أرقام، أعمدة بتطلع، سحب يمين/شمال بين التابات، وتحديث تلقائي للنظرة العامة */
+function ownerSwipe(sh) {
+  let x0 = 0, y0 = 0, t0 = 0, ok = false;
+  const body = sh.querySelector("#pbody");
+  body.addEventListener("touchstart", e => { const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); ok = !e.target.closest("input,textarea,select,.fl,.tabs"); }, { passive: true });
+  body.addEventListener("touchend", e => {
+    if (!ok) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8 || Date.now() - t0 > 700) return;
+    const cur = OWNER_TABS.findIndex(([k]) => sh.querySelector(`[data-t="${k}"]`)?.classList.contains("on"));
+    const nx = cur + (dx < 0 ? 1 : -1); // الموقع RTL: السحب لليسار = التالي
+    if (nx >= 0 && nx < OWNER_TABS.length) openOwner(OWNER_TABS[nx][0]);
+  }, { passive: true });
+  const tabs = sh.querySelector("#tabs"); let dn = false, sx = 0, sl = 0;
+  tabs.addEventListener("mousedown", e => { dn = true; sx = e.pageX; sl = tabs.scrollLeft; });
+  addEventListener("mouseup", () => { dn = false; });
+  tabs.addEventListener("mousemove", e => { if (dn) tabs.scrollLeft = sl - (e.pageX - sx); });
+}
+function ownerAfter(sh, tab) {
+  const body = sh.querySelector("#pbody"); if (!body) return;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.motion === "off";
+  body.classList.remove("op-in"); void body.offsetWidth; body.classList.add("op-in");
+  if (!reduce) {
+    body.querySelectorAll(".stat b").forEach(el => {
+      const raw = String(el.textContent).trim(), to = /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN; if (!isFinite(to) || to < 2) return;
+      const t0 = performance.now(), dur = 700;
+      const step = now => { const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = Math.round(to * e); if (k < 1) requestAnimationFrame(step); else el.textContent = to; };
+      requestAnimationFrame(step);
+    });
+    body.querySelectorAll(".bar i").forEach(i => { const h = i.style.height; i.style.height = "3px"; requestAnimationFrame(() => requestAnimationFrame(() => { i.style.height = h; })); });
+  }
+  clearInterval(_ownTimer);
+  if (tab === "overview") _ownTimer = setInterval(() => {
+    if ($("#modal").classList.contains("hidden") || !$("#sheet").classList.contains("owner-sheet")) { clearInterval(_ownTimer); return; }
+    if (!document.hidden && body.scrollTop < 5) { _au.t = 0; openOwner("overview"); }
+  }, 45000);
 }
