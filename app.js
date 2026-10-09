@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, enableNetwork, disableNetwork, waitForPendingWrites, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, limitToLast,
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, enableNetwork, disableNetwork, waitForPendingWrites, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, orderBy, limit, limitToLast, endBefore,
   onSnapshot, addDoc, where, serverTimestamp, increment, writeBatch, getDocs, deleteField, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import * as CFG from "./firebase-config.js";
@@ -13,6 +13,17 @@ const VAPID_KEY = CFG.VAPID_KEY || "";
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const S = { user: null, me: null, e2ee: { ready: false, error: "" }, users: new Map(), chats: [], chat: null, found: null, site: {}, groups: [], gseen: new Map(), seen: new Map(), unsub: {}, view: "boot", filter: "all", prefs: { pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] } };
+let CALL = null, callSeen = new Set();
+const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+function stopCallUI() { if (!CALL) return; CALL.stream?.getTracks().forEach(t => t.stop()); CALL.pc?.close(); CALL.unsub?.forEach(f => f && f()); CALL = null; closeModal(); }
+async function finishCall(state = "ended") { const c = CALL; if (!c) return; try { await updateDoc(doc(db, "calls", c.id), { state, endedAt: serverTimestamp() }); } catch {} stopCallUI(); }
+function callView(kind, name) { const sh = openModal(`<div class="call-screen"><div class="menu-h">${kind === "video" ? "مكالمة فيديو" : "مكالمة صوتية"}</div><div class="call-peer">${esc(name || "مستخدم")}</div><video id="callRemote" class="call-remote" autoplay playsinline></video><video id="callLocal" class="call-local ${kind === "video" ? "" : "hidden"}" autoplay muted playsinline></video><div class="call-status" id="callStatus">جاري الاتصال...</div><div class="call-actions"><button class="btn-ghost" id="callMute">كتم الميكروفون</button><button class="btn-ghost" id="callCam" ${kind === "video" ? "" : "disabled"}>الكاميرا</button><button class="btn-danger" id="callEnd">إنهاء</button></div></div>`); sh.querySelector("#callEnd").onclick = () => finishCall(); sh.querySelector("#callMute").onclick = () => { const t = CALL?.stream?.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; sh.querySelector("#callMute").textContent = t.enabled ? "كتم الميكروفون" : "تشغيل الميكروفون"; } }; const cam = sh.querySelector("#callCam"); cam.onclick = () => { const t = CALL?.stream?.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; cam.textContent = t.enabled ? "إيقاف الكاميرا" : "تشغيل الكاميرا"; } }; return sh; }
+function wirePeer(pc, ref, remote, stream) { pc.ontrack = e => { remote.srcObject = e.streams[0]; }; pc.onicecandidate = e => { if (e.candidate) addDoc(collection(db, "calls", ref.id, "candidates"), { from: S.user.uid, candidate: e.candidate.toJSON() }).catch(() => {}); }; pc.onconnectionstatechange = () => { const st = document.querySelector("#callStatus"); if (st) st.textContent = pc.connectionState === "connected" ? "متصل" : pc.connectionState === "failed" ? "فشل الاتصال" : pc.connectionState; if (pc.connectionState === "failed") finishCall(); }; stream.getTracks().forEach(t => pc.addTrack(t, stream)); }
+function watchCandidates(ref, pc, own) { const seen = new Set(); return onSnapshot(collection(db, "calls", ref.id, "candidates"), snap => snap.docChanges().forEach(ch => { const d = ch.doc.data(); if (ch.type === "added" && d.from !== own && !seen.has(ch.doc.id)) { seen.add(ch.doc.id); pc.addIceCandidate(new RTCIceCandidate(d.candidate)).catch(() => {}); } })); }
+async function startCall(kind) { if (!S.chat?.peer || CALL) return; const peer = S.chat.peer, u = S.users.get(peer) || {}; try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: kind === "video" }); const pc = new RTCPeerConnection(rtcConfig); const offer = await pc.createOffer(); await pc.setLocalDescription(offer); const ref = await addDoc(collection(db, "calls"), { caller: S.user.uid, callee: peer, kind, offer: pc.localDescription.toJSON(), state: "ringing", createdAt: serverTimestamp(), expiresAt: new Date(Date.now() + 120000) }); const sh = callView(kind, u.name); const remote = sh.querySelector("#callRemote"), local = sh.querySelector("#callLocal"); local.srcObject = stream; CALL = { id: ref.id, role: "caller", pc, stream, unsub: [], kind }; wirePeer(pc, ref, remote, stream); CALL.unsub.push(watchCandidates(ref, pc, S.user.uid)); CALL.unsub.push(onSnapshot(ref, async s => { const d = s.data(); if (!d || d.state === "ended" || d.state === "rejected") return stopCallUI(); if (d.answer && !pc.currentRemoteDescription) await pc.setRemoteDescription(new RTCSessionDescription(d.answer)); })); } catch (e) { console.error(e); toast(e.name === "NotAllowedError" ? "اسمح للميكروفون والكاميرا من إعدادات المتصفح" : "تعذّر بدء المكالمة"); } }
+async function acceptCall(id, data) { if (CALL) return; const u = S.users.get(data.caller) || {}; try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: data.kind === "video" }); const pc = new RTCPeerConnection(rtcConfig), ref = doc(db, "calls", id); await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); const sh = callView(data.kind, u.name); const remote = sh.querySelector("#callRemote"), local = sh.querySelector("#callLocal"); local.srcObject = stream; CALL = { id, role: "callee", pc, stream, unsub: [], kind: data.kind }; wirePeer(pc, ref, remote, stream); CALL.unsub.push(watchCandidates(ref, pc, S.user.uid)); CALL.unsub.push(onSnapshot(ref, s => { if (["ended", "rejected"].includes(s.data()?.state)) stopCallUI(); })); await updateDoc(ref, { answer: pc.localDescription.toJSON(), state: "active" }); } catch (e) { console.error(e); toast("تعذّر قبول المكالمة"); } }
+function showIncomingCall(id, data) { if (callSeen.has(id) || CALL) return; callSeen.add(id); ensureUsers([data.caller]).then(() => { const u = S.users.get(data.caller) || {}; const sh = openModal(`<div class="menu"><div class="menu-h">مكالمة واردة</div><p class="sub">${esc(u.name || "مستخدم")} يريد بدء مكالمة ${data.kind === "video" ? "فيديو" : "صوتية"}.</p><div class="actions"><button class="btn-primary" id="acceptCall">قبول</button><button class="btn-danger" id="rejectCall">رفض</button></div></div>`); sh.querySelector("#acceptCall").onclick = () => { closeModal(); acceptCall(id, data); }; sh.querySelector("#rejectCall").onclick = async () => { await updateDoc(doc(db, "calls", id), { state: "rejected", endedAt: serverTimestamp() }).catch(() => {}); closeModal(); }; }); }
+function watchIncomingCalls() { if (S.unsub.incomingCalls) S.unsub.incomingCalls(); S.unsub.incomingCalls = onSnapshot(query(collection(db, "calls"), where("callee", "==", S.user.uid), limit(8)), snap => snap.docs.forEach(d => { const x = d.data(); if (x.state === "ringing" && (!x.expiresAt || toDate(x.expiresAt) > new Date())) showIncomingCall(d.id, x); }), () => {}); }
 const DEFAULT_PREFS = () => ({ pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] });
 try { const u = new URLSearchParams(location.search).get("u"); if (u) sessionStorage.es_u = u; const gp = new URLSearchParams(location.search).get("g"); if (gp) sessionStorage.es_g = gp; const cp = new URLSearchParams(location.search).get("c"); if (cp) sessionStorage.es_c = cp; const kp = new URLSearchParams(location.search).get("k"); if (kp && gp) sessionStorage.es_k = gp + "." + kp; const ap = new URLSearchParams(location.search).get("ai"); if (ap) sessionStorage.es_ai = ap; } catch {}
 const LS = {
@@ -151,6 +162,7 @@ $("#noticeOut").onclick = doSignOut;
 function notice(t, p) { $("#noticeT").textContent = t; $("#noticeP").textContent = p; show("notice"); }
 
 function cleanup() {
+  if (CALL) stopCallUI();
   Object.values(S.unsub).forEach(f => f && f());
   clearInterval(S.beatT); clearInterval(S.tickT); clearTimeout(S.typT);
   S.unsub = {}; S.me = null; S.e2ee = { ready: false, error: "" }; S.chat = null; S.users = new Map(); S.chats = []; S.found = null; S.site = {}; S.seen = new Map(); S.chatsLoaded = false; S.fcm = null; S.prefs = DEFAULT_PREFS(); S.filter = "all"; S.groups = []; S.gseen = new Map(); S.groupsLoaded = false;
@@ -164,6 +176,7 @@ async function onAuth(user) {
     .then(v => { S.e2ee = v; })
     .catch(e => { console.warn("E2EE foundation", e); S.e2ee = { ready: false, error: e.message || "crypto init failed" }; });
   S.unsub.site = onSnapshot(doc(db, "settings", "site"), s => { S.site = s.data() || {}; siteChanged(); }, () => {});
+  watchIncomingCalls();
   try {
     const ref = doc(db, "users", user.uid);
     const snap = await withTimeout(getDoc(ref));
@@ -362,10 +375,21 @@ async function onIncomingGroup(gid, d) {
   const here = document.visibilityState === "visible";
   if (here && S.chat && S.chat.id === gid) { markRead(gid); return; }
   setUnread(gid, (unreadMap()[gid] || 0) + 1); renderList();
+  maybeMentionNotify(gid, d);
   if (!prefs.notifs || S.prefs.mute.includes(gid)) return;
   const text = prefs.preview ? (d.kind === "channel" ? (d.lastText || "") : (d.lastName ? d.lastName + ": " : "") + (d.lastText || "")) : "رسالة جديدة";
   if (here) toast(d.name + ": " + text); else showNotif(d.name, text, "g:" + gid);
   beep();
+}
+const mentionSeen = new Set();
+function mentionPattern(username) { return new RegExp("(?:^|\\s)@" + String(username || "").replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&") + "(?:\\b|$)", "i"); }
+function maybeMentionNotify(gid, d) {
+  const username = S.me && S.me.username, text = String(d.lastText || "");
+  if (!username || !text || d.lastUid === S.user.uid || !mentionPattern(username).test(text) || !prefs.notifs || inQuiet()) return;
+  const key = gid + "|" + String(toDate(d.lastAt)?.getTime() || text);
+  if (mentionSeen.has(key)) return; mentionSeen.add(key); if (mentionSeen.size > 240) mentionSeen.delete(mentionSeen.values().next().value);
+  const title = "تم ذكرك في " + String(d.name || "المحادثة").slice(0, 50), body = prefs.preview ? String(d.lastText).slice(0, 120) : "فيه عضو ذكرك في رسالة";
+  if (document.visibilityState === "visible") toast(title + ": " + body); else showNotif(title, body, "g:" + gid);
 }
 function paintNotifBar() {
   const bar = $("#notifBar");
@@ -481,7 +505,7 @@ function openSettings() {
     <div class="field qrow"><label for="stQf">من</label><input type="time" id="stQf" value="${esc(LS.get("qFrom", "23:00"))}"><label for="stQt">إلى</label><input type="time" id="stQt" value="${esc(LS.get("qTo", "07:00"))}"></div>
     <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="stReload">إعادة تحميل التطبيق</button></div>
     <div class="panel-h">أدوات الأعمال</div>
-    <div class="menu" style="padding:0"><button class="mrow" id="stLbl"><span>التصنيفات</span><small>${S.prefs.labels.length}</small></button>
+    <div class="menu" style="padding:0"><button class="mrow" id="stLbl"><span>مجلدات الدردشة</span><small>${S.prefs.labels.length}</small></button>
       <button class="mrow" id="stQr"><span>الردود السريعة</span><small>${S.prefs.quick.length}</small></button>
       <button class="mrow" id="stStar"><span>الرسائل المميزة</span><small>${S.prefs.stars.length}</small></button></div>
     <div class="actions" style="margin-top:22px"><button class="btn-ghost" id="stOut">تسجيل الخروج</button></div>`);
@@ -653,7 +677,7 @@ function showEmpty() {
   $("#messages").innerHTML = `<div class="empty"><div class="big">ES Chat Pro</div><p>ابحث عن صاحبك بالـ @يوزر عشان تبدأ محادثة.</p></div>`;
   $("#app").classList.remove("open"); layerClose("chat");
 }
-function chatUiClose() { $("#app").classList.remove("open"); }
+function chatUiClose() { if (CALL) finishCall(); $("#app").classList.remove("open"); }
 $("#meBtn").onclick = () => openSettings();
 $("#ownerBtn").onclick = () => openOwner();
 $("#back").onclick = () => { chatUiClose(); layerClose("chat"); };
@@ -688,6 +712,11 @@ const dmId = peer => [S.user.uid, peer].sort().join("_");
 const ttlLabel = s => ({ 86400: "24 ساعة", 604800: "7 أيام", 7776000: "90 يوم" }[s] || "");
 const LABEL_COLORS = ["#4be0a0", "#ffd166", "#ff5c7a", "#2f6bff", "#b07cff", "#ff9f43"];
 const nameOf = uid => uid === S.user.uid ? "أنت" : ((S.users.get(uid) || {}).name || "مستخدم");
+function mentionHtml(text, enabled = false) {
+  const safe = esc(text);
+  if (!enabled) return safe;
+  return safe.replace(/(^|\s)(@[a-z0-9_]{3,20})\b/gi, '$1<mark class="mention">$2</mark>');
+}
 const prefsRef = () => doc(db, "users", S.user.uid, "data", "prefs");
 function savePrefs(patch) {
   S.prefs = { ...S.prefs, ...patch }; renderList(); if (S.chat) { applyComposerState(); paintHead(); }
@@ -841,7 +870,7 @@ function paintPin() {
   b.classList.remove("hidden"); b.onclick = e => { const x = e.target.closest("[data-pin]"); if (x) jumpTo(x.dataset.pin); };
 }
 function paintHeadInner() {
-  const c = S.chat; if (!c) return; $("#chatSearchBtn").classList.remove("hidden");
+  const c = S.chat; if (!c) return; $("#chatSearchBtn").classList.remove("hidden"); $("#callAudioBtn").classList.toggle("hidden", c.type !== "dm"); $("#callVideoBtn").classList.toggle("hidden", c.type !== "dm");
   $("#chatMenuBtn").classList.toggle("hidden", c.type === "public");
   if (c.type === "group" || c.type === "channel") {
     const g = c.group; $("#chatHead").innerHTML = `${gAvatar(g)}<div class="t"><b>${g.kind === "channel" ? CHAN_IC : ""}${esc(g.name)}${g.verified ? badge(g, 16) : ""}</b><small>${esc(gCount(g))}${g.handle ? " · <bdi>#" + esc(g.handle) + "</bdi>" : ""}</small></div>`; return;
@@ -851,14 +880,43 @@ function paintHeadInner() {
   $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b>${esc(u.name || "مستخدم")}${badge(u, 16)}${ttl ? `<span class="ttl-chip">${ttlLabel(ttl)}</span>` : ""}</b><small class="st ${st.cls}">${st.t ? esc(st.t) : "<bdi>@" + esc(u.username || "") + "</bdi>"}</small></div>`;
 }
 
+$("#callAudioBtn").onclick = () => startCall("audio");
+$("#callVideoBtn").onclick = () => startCall("video");
+const MSG_PAGE = 40;
+const msTs = d => toDate(d.data({ serverTimestamps: "estimate" }).at)?.getTime() || Infinity;
+function liveMsgs(c, snap) {
+  const all = c.all || (c.all = new Map());
+  const first = snap.docs.length ? msTs(snap.docs[0]) : -Infinity;
+  const added = snap.docChanges().some(x => x.type === "added");
+  snap.docChanges().forEach(ch => {
+    if (ch.type === "removed") { if (!(ch.oldIndex === 0 && added && snap.docs.length >= MSG_PAGE) && msTs(ch.doc) >= first || snap.docs.length < MSG_PAGE) all.delete(ch.doc.id); }
+    else all.set(ch.doc.id, ch.doc);
+  });
+  c.live = new Set(snap.docs.map(d => d.id));
+  return [...all.values()].sort((a, b) => msTs(a) - msTs(b));
+}
+async function loadOlder() {
+  const c = S.chat; if (!c || c.loadingOld || c.noMore || !c.all || !c.all.size) return;
+  c.loadingOld = true; const btn = $("#olderBtn"); if (btn) btn.textContent = "بيحمّل...";
+  try {
+    const sorted = [...c.all.values()].sort((a, b) => msTs(a) - msTs(b));
+    const sn = await getDocs(query(collection(db, ...msgBase(c)), orderBy("at"), endBefore(sorted[0]), limitToLast(MSG_PAGE)));
+    if (S.chat !== c) return;
+    sn.docs.forEach(d => c.all.set(d.id, d)); if (sn.size < MSG_PAGE) c.noMore = true;
+    const box = $("#messages"), prevH = box.scrollHeight, prevTop = box.scrollTop;
+    await renderMsgs([...c.all.values()].sort((a, b) => msTs(a) - msTs(b)));
+    box.scrollTop = box.scrollHeight - prevH + prevTop;
+  } catch (e) { console.error(e); toast("تعذّر تحميل الرسايل الأقدم"); }
+  finally { c.loadingOld = false; const b2 = $("#olderBtn"); if (b2) b2.textContent = "تحميل رسايل أقدم"; }
+}
 function openChat(peer) {
   closeChatSubs(); clearTimeout(S.typT);
   const id = peer ? dmId(peer) : "public";
   S.chat = { id, type: peer ? "dm" : "public", peer: peer || null, first: true, lastTyping: undefined, typingAt: 0, sentTyping: 0, sentRead: 0, reply: null, doc: null, sig: "", cleaned: new Set() };
   $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open"); layerOpen("chat", chatUiClose);
-  $("#messages").innerHTML = ""; paintReply(); hideQuick(); markRead(id); applyComposerState(); paintHead(); renderList();
-  S.unsub.msgs = onSnapshot(query(collection(db, "chats", id, "messages"), orderBy("at"), limitToLast(150)),
-    snap => { S.chat && S.chat.id === id && renderMsgs(snap.docs); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
+  $("#messages").innerHTML = ""; $("#input").value = LS.get("draft_" + id, ""); paintReply(); hideQuick(); markRead(id); applyComposerState(); paintHead(); renderList();
+  S.unsub.msgs = onSnapshot(query(collection(db, "chats", id, "messages"), orderBy("at"), limitToLast(MSG_PAGE)),
+    snap => { if (S.chat && S.chat.id === id) renderMsgs(liveMsgs(S.chat, snap)); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
   if (peer) {
     getUser(peer).then(paintHead);
     S.unsub.peerDoc = onSnapshot(doc(db, "users", peer, "public", "profile"), s => { if (s.exists() && S.chat && S.chat.peer === peer) { S.users.set(peer, s.data()); paintHead(); } }, () => {});
@@ -910,9 +968,10 @@ function renderMsgsPlain(docs) {
   for (const d of docs) {
     const m = d.data({ serverTimestamps: "estimate" });
     if (hid.has(d.id)) continue;
+    if (c.type === "group" && c.topicId && m.topicId !== c.topicId) continue;
     if (m.exp && m.exp < now) { if (m.uid === me && !c.cleaned.has(d.id)) { c.cleaned.add(d.id); deleteDoc(doc(db, ...msgBase(c), d.id)).catch(() => {}); } continue; }
     vis.push([d, m]);
-    if (m.uid !== me && c.type !== "public") markMessageReceipt(d.id, m);
+    if (m.uid !== me && c.type !== "public" && (!c.live || c.live.has(d.id))) markMessageReceipt(d.id, m);
   }
   const ttl = c.doc && c.doc.ttl;
   const notice = ttl ? `<div class="sys">الرسائل المختفية شغالة: بتتمسح بعد ${ttlLabel(ttl)}</div>` : "";
@@ -922,22 +981,28 @@ function renderMsgsPlain(docs) {
   }
   if (pub) ensureUsers(vis.map(([, m]) => m.uid)).then(ch => { if (ch && S.chat && (S.chat.type === "public" || S.chat.type === "group")) renderMsgs(S.chat.lastDocs); });
   const stars = new Set(S.prefs.stars.map(s => s.c + "/" + s.m));
-  let last = "", h = notice, pu = "", pt = 0, lastMs = 0, lastUid = "";
+  const more = !c.noMore && (c.all ? c.all.size : docs.length) >= MSG_PAGE;
+  let last = "", h = notice + (more ? `<button type="button" class="older" id="olderBtn">تحميل رسايل أقدم</button>` : ""), pu = "", pt = 0, lastMs = 0, lastUid = "";
   for (const [d, m] of vis) {
     const dt = toDate(m.at) || new Date(), mine = m.uid === me;
     const lbl = dayLabel(dt); if (lbl !== last) { h += `<div class="date-sep">${esc(lbl)}</div>`; last = lbl; pu = ""; }
     const sender = S.users.get(m.uid) || {};
+    const shownText = S.me?.lang === "en" && m.textEn ? m.textEn : S.me?.lang !== "en" && m.textAr ? m.textAr : m.text;
     const cont = pu === m.uid && dt.getTime() - pt < 300000; pu = m.uid; pt = dt.getTime(); lastMs = pt; lastUid = m.uid;
     let body = "";
-    if (m.deleted) body = `<div class="txt del-m">الرسالة دي اتحذفت</div>`;
-    else {
+      if (m.deleted) body = `<div class="txt del-m">الرسالة دي اتحذفت</div>`;
+      else {
+      if (m.sticker && (m.sticker.emoji || m.sticker.img)) body += `<div class="sticker" title="${esc(m.sticker.label || "ملصق ES Chat Pro")}">${m.sticker.img ? `<img src="${esc(m.sticker.img)}" alt="${esc(m.sticker.label || "ملصق")}">` : `<span>${esc(m.sticker.emoji)}</span>`}<small>${esc(m.sticker.label || "ES Sticker")}</small></div>`;
+      if (m.topicId) body += `<div class="msg-topic"># موضوع المجموعة</div>`;
       if (m.fwd) body += `<div class="fwd">معاد توجيهها</div>`;
       if (m.reply) body += `<div class="quote" data-q="${esc(m.reply.id)}"><b>${esc(nameOf(m.reply.uid))}</b><span>${esc(m.reply.t)}</span></div>`;
       if (m.img && String(m.img).startsWith("data:image/")) body += `<img class="mimg" src="${esc(m.img)}" alt="صورة" data-img>`;
-      if (m.file && m.file.data) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="data:${esc(m.file.type || "application/octet-stream")};base64,${esc(m.file.data)}">📎 <span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
+      if (m.file && m.file.data && String(m.file.type || "").startsWith("audio/")) body += `<audio class="maudio" controls preload="metadata" src="data:${esc(m.file.type)};base64,${esc(m.file.data)}"></audio>`;
+      else if (m.file && m.file.data) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="data:${esc(m.file.type || "application/octet-stream")};base64,${esc(m.file.data)}">📎 <span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
       if (m.loc) body += `<a class="mloc" href="https://www.google.com/maps?q=${+m.loc.lat},${+m.loc.lng}" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg><span>موقع على الخريطة</span></a>`;
-      if (m.text) body += `<div class="txt">${esc(m.text)}</div>`;
-      if (m.text) body += linkCardHtml(m.text);
+      if (shownText) body += `<div class="txt">${mentionHtml(shownText, c.type === "group" || c.type === "channel")}</div>`;
+      if (shownText) body += linkCardHtml(shownText);
+      if (Array.isArray(m.buttons)) { const bs = m.buttons.filter(x => x && /^https:\/\//i.test(x.url) && (x.ar || x.en)).slice(0, 8); if (bs.length) body += `<div class="bot-buttons">${bs.map(x => `<a class="bot-btn" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(S.me?.lang === "en" ? (x.en || x.ar) : (x.ar || x.en))}</a>`).join("")}</div>`; }
       if (m.poll && Array.isArray(m.poll.o)) {
         const vs = m.votes || {}, tot = Object.keys(vs).length, cn = m.poll.o.map(() => 0);
         for (const v of Object.values(vs)) if (cn[v] !== undefined) cn[v]++;
@@ -1125,6 +1190,7 @@ function paintReply() {
   bar.classList.remove("hidden"); $("#rpX").onclick = () => { S.chat.reply = null; paintReply(); };
 }
 $("#messages").addEventListener("click", e => {
+  if (e.target.closest("#olderBtn")) return loadOlder();
   const w = e.target.closest("[data-uid]"); if (w) return openProfile(w.dataset.uid);
   const pv = e.target.closest("[data-vote]"); if (pv) { const mm = pv.closest("[data-mid]"); if (mm) voteTo(mm.dataset.mid, +pv.dataset.vote); return; }
   const rc = e.target.closest("[data-re]"); if (rc) { const mm = rc.closest("[data-mid]"); if (mm) reactTo(mm.dataset.mid, rc.dataset.re); return; }
@@ -1150,7 +1216,7 @@ function openChatMenu(peer) {
   const u = S.users.get(peer) || {};
   const rows = [["profile", "عرض البروفايل"], ["pin", P.pins.includes(id) ? "إلغاء تثبيت المحادثة" : "تثبيت المحادثة"],
     ["arch", P.arch.includes(id) ? "إلغاء الأرشفة" : "أرشفة المحادثة"], ["mute", P.mute.includes(id) ? "إلغاء كتم الإشعارات" : "كتم الإشعارات"],
-    ["lbl", "التصنيفات"], ["ttl", "الرسائل المختفية", ttl ? ttlLabel(ttl) : "إيقاف"], ["blk", P.block.includes(peer) ? "إلغاء حظر المستخدم" : "حظر المستخدم", "", true]];
+    ["lbl", "مجلدات الدردشة"], ["ttl", "الرسائل المختفية", ttl ? ttlLabel(ttl) : "إيقاف"], ["blk", P.block.includes(peer) ? "إلغاء حظر المستخدم" : "حظر المستخدم", "", true]];
   const sh = openModal(`<div class="menu"><div class="menu-h">${esc(u.name || "محادثة")}</div>${rows.map(([a, t, v, dng]) => `<button class="mrow ${dng ? "danger" : ""}" data-a="${a}"><span>${t}</span>${v ? `<small>${v}</small>` : ""}</button>`).join("")}</div>`);
   sh.querySelector(".menu").onclick = e => {
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
@@ -1168,22 +1234,24 @@ function openChatMenu(peer) {
 }
 function openChatSearch() {
   const c = S.chat; if (!c) return; let flt = "all";
-  const FL = [["all", "الكل"], ["img", "صور"], ["link", "روابط"], ["loc", "مواقع"]];
+  const FL = [["all", "الكل"], ["img", "صور"], ["link", "روابط"], ["loc", "مواقع"], ["audio", "صوت"], ["file", "ملفات"]];
   const sh = openModal(`<div class="menu"><div class="menu-h">بحث في المحادثة</div><div class="field"><input id="csQ" placeholder="كلمة، أو from:اسم" autocomplete="off"></div><div class="seg3 four" id="csF">${FL.map(([k, t]) => `<button type="button" class="${k === "all" ? "on" : ""}" data-f="${k}">${t}</button>`).join("")}</div><div id="csR"></div></div>`);
   const inp = sh.querySelector("#csQ"), out = sh.querySelector("#csR");
   const go = () => {
     let t = inp.value.trim().toLowerCase(), from = "";
     const fm = /(?:^|\s)from:(\S+)/.exec(t); if (fm) { from = fm[1]; t = t.replace(fm[0], "").trim(); }
-    if (!t && !from && flt === "all") { out.innerHTML = `<div class="empty-list">بيبحث في آخر 150 رسالة محمّلة.</div>`; return; }
+    if (!t && !from && flt === "all") { out.innerHTML = `<div class="empty-list">بيبحث في ${c.lastDocs?.length || 0} رسالة محمّلة على جهازك.</div>`; return; }
     const hits = (c.lastDocs || []).filter(d => {
       const m = d.data(); if (m.deleted) return false;
       if (flt === "img" && !m.img) return false;
       if (flt === "loc" && !m.loc) return false;
+      if (flt === "audio" && !(m.file && String(m.file.type || "").startsWith("audio/"))) return false;
+      if (flt === "file" && !(m.file && !String(m.file.type || "").startsWith("audio/"))) return false;
       if (flt === "link" && !/https?:\/\/|www\./i.test(m.text || "")) return false;
       if (from && !nameOf(m.uid).toLowerCase().includes(from)) return false;
       return !t || ((m.text || "") + " " + (m.poll ? m.poll.q : "")).toLowerCase().includes(t);
     }).reverse().slice(0, 40);
-    out.innerHTML = hits.length ? hits.map(d => { const m = d.data(), dt = toDate(m.at); return `<div class="row-item" data-j="${esc(d.id)}"><div class="meta"><div class="name">${esc(nameOf(m.uid))}</div><small>${esc(m.text ? m.text.slice(0, 90) : m.img ? "📷 صورة" : "📍 موقع")}${dt ? " · " + esc(listTime(dt)) : ""}</small></div></div>`; }).join("") : `<div class="empty-list">مفيش نتايج.</div>`;
+    out.innerHTML = hits.length ? hits.map(d => { const m = d.data(), dt = toDate(m.at), label = m.text ? m.text.slice(0, 90) : m.img ? "📷 صورة" : m.file?.type?.startsWith("audio/") ? "🎙 رسالة صوتية" : m.file ? "📎 ملف" : m.loc ? "📍 موقع" : m.poll ? "📊 استفتاء" : "رسالة"; return `<div class="row-item" data-j="${esc(d.id)}"><div class="meta"><div class="name">${esc(nameOf(m.uid))}</div><small>${esc(label)}${dt ? " · " + esc(listTime(dt)) : ""}</small></div></div>`; }).join("") : `<div class="empty-list">مفيش نتايج.</div>`;
   };
   go(); inp.oninput = go;
   sh.querySelector("#csF").onclick = e => { const b = e.target.closest("[data-f]"); if (!b) return; flt = b.dataset.f; sh.querySelectorAll("#csF button").forEach(x => x.classList.toggle("on", x === b)); go(); };
@@ -1202,9 +1270,9 @@ function openTtlPicker(peer, cur) {
 }
 function openLabelPicker(chatId) {
   const P = S.prefs;
-  if (!P.labels.length) { const sh = openModal(`<div class="menu"><div class="menu-h">التصنيفات</div><div class="empty-list">لسه معملتش تصنيفات.</div><button class="mrow" id="mkL"><span>إنشاء تصنيف</span></button></div>`); sh.querySelector("#mkL").onclick = manageLabels; return; }
+  if (!P.labels.length) { const sh = openModal(`<div class="menu"><div class="menu-h">مجلدات الدردشة</div><div class="empty-list">لسه معملتش مجلدات.</div><button class="mrow" id="mkL"><span>إنشاء مجلد</span></button></div>`); sh.querySelector("#mkL").onclick = manageLabels; return; }
   const cur = P.cl[chatId] || [];
-  const sh = openModal(`<div class="menu"><div class="menu-h">التصنيفات</div>${P.labels.map(l => switchRow("lp_" + l.id, cur.includes(l.id), `<i class="ldot" style="background:${esc(l.c)}"></i> ${esc(l.n)}`)).join("")}<button class="mrow" id="mkL"><span>إدارة التصنيفات</span></button></div>`);
+  const sh = openModal(`<div class="menu"><div class="menu-h">مجلدات الدردشة</div>${P.labels.map(l => switchRow("lp_" + l.id, cur.includes(l.id), `<i class="ldot" style="background:${esc(l.c)}"></i> ${esc(l.n)}`)).join("")}<button class="mrow" id="mkL"><span>إدارة المجلدات</span></button></div>`);
   P.labels.forEach(l => sh.querySelector("#lp_" + l.id).onchange = ev => {
     const now = S.prefs.cl[chatId] || []; savePrefs({ cl: { ...S.prefs.cl, [chatId]: ev.target.checked ? [...now, l.id] : now.filter(x => x !== l.id) } });
   });
@@ -1214,9 +1282,9 @@ function manageLabels() {
   let col = LABEL_COLORS[0];
   const draw = () => {
     const P = S.prefs;
-    const sh = openModal(`<div class="menu"><div class="menu-h">التصنيفات</div>
+    const sh = openModal(`<div class="menu"><div class="menu-h">مجلدات الدردشة</div>
       ${P.labels.map(l => `<div class="mrow static"><span><i class="ldot" style="background:${esc(l.c)}"></i> ${esc(l.n)}</span><button class="btn-danger sm" data-d="${esc(l.id)}">حذف</button></div>`).join("") || `<div class="empty-list">مفيش تصنيفات.</div>`}
-      ${P.labels.length < 8 ? `<div class="field" style="margin-top:12px"><label for="lN">تصنيف جديد</label><input type="text" id="lN" maxlength="16" placeholder="مثال: عميل جديد"></div>
+      ${P.labels.length < 8 ? `<div class="field" style="margin-top:12px"><label for="lN">مجلد جديد</label><input type="text" id="lN" maxlength="16" placeholder="مثال: العمل أو العائلة"></div>
       <div class="swatches">${LABEL_COLORS.map(c => `<button type="button" class="sw ${c === col ? "on" : ""}" data-c="${c}" style="background:${c}" aria-label="لون"></button>`).join("")}</div>
       <div class="actions"><button class="btn-primary" id="lAdd">إضافة</button></div>` : ""}</div>`);
     sh.querySelectorAll("[data-d]").forEach(b => b.onclick = () => { savePrefs({ labels: S.prefs.labels.filter(l => l.id !== b.dataset.d) }); draw(); });
@@ -1297,7 +1365,8 @@ async function sendTo(c, payload) {
     if (!isGMember(g) || ((g.kind === "channel" || g.sendAdmins) && !isGAdmin(g))) { toast("مش مسموحلك تبعت هنا"); throw new Error("blocked"); }
     if (isMutedG(g)) { toast("إنت مكتوم لحد " + new Date(mutedUntil(g)).toLocaleString("ar-EG")); throw new Error("blocked"); }
     const prev = payload.poll ? "📊 " + payload.poll.q : payload.img ? "📷 صورة" : payload.loc ? "📍 موقع" : (payload.text || "");
-    const wr = addDoc(collection(db, "groups", c.id, "messages"), { uid: S.user.uid, at: serverTimestamp(), ...payload });
+    const topicId = S.chat && S.chat.id === c.id ? S.chat.topicId : "";
+    const wr = addDoc(collection(db, "groups", c.id, "messages"), { uid: S.user.uid, at: serverTimestamp(), ...(topicId ? { topicId } : {}), ...payload });
     updateDoc(doc(db, "groups", c.id), { lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, lastName: (S.me.name || "").slice(0, 40) }).catch(e => console.error(e));
     const posted = await wr;
     pushNotify("g:" + c.id, prev, posted.id);
@@ -1306,7 +1375,7 @@ async function sendTo(c, payload) {
   const meta = S.chats.find(x => x.id === c.id), ttl = c.peer ? ((S.chat && S.chat.id === c.id && S.chat.doc ? S.chat.doc.ttl : meta && meta.ttl) || 0) : 0;
   let data = { uid: S.user.uid, at: serverTimestamp(), ...payload };
   let encryptedPrivate = false;
-  if (c.peer && (payload.text || payload.img || payload.file || payload.loc || payload.poll)) {
+  if (c.peer && (payload.text || payload.img || payload.file || payload.loc || payload.poll || payload.sticker)) {
     const bundle = await getPeerCrypto(c.peer);
     if (!bundle) { toast("مفتاح التشفير للطرف الآخر غير جاهز. افتح الموقع من الجهاز الآخر مرة واحدة ثم جرّب."); throw new Error("peer-crypto-missing"); }
     const cipher = await encryptPrivatePayload(S.user.uid, bundle, payload);
@@ -1316,7 +1385,7 @@ async function sendTo(c, payload) {
   if (ttl) data.exp = Date.now() + ttl * 1000;
   const wr = addDoc(collection(db, "chats", c.id, "messages"), data);
   if (c.peer) {
-    const prev = encryptedPrivate ? "🔒 رسالة مشفّرة" : (payload.poll ? "📊 " + payload.poll.q : payload.img ? "📷 صورة" : payload.file ? "📎 ملف" : payload.loc ? "📍 موقع" : (payload.text || ""));
+    const prev = encryptedPrivate ? "🔒 رسالة مشفّرة" : (payload.poll ? "📊 " + payload.poll.q : payload.img ? "📷 صورة" : payload.file ? "📎 ملف" : payload.sticker ? "🎨 ملصق" : payload.loc ? "📍 موقع" : (payload.text || ""));
     if (S.chat && S.chat.id === c.id) S.chat.sentTyping = 0;
     setDoc(doc(db, "chats", c.id), { members: [S.user.uid, c.peer].sort(), lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, typing: { [S.user.uid]: 0 } }, { merge: true }).catch(e => console.error(e));
     pushNotify(c.id, encryptedPrivate ? "رسالة جديدة" : prev);
@@ -1324,7 +1393,24 @@ async function sendTo(c, payload) {
   await wr;
 }
 function hideQuick() { $("#quickPop").classList.add("hidden"); $("#quickPop").innerHTML = ""; }
+function mentionSuggest() {
+  const input = $("#input"), v = input.value, m = v.match(/(?:^|\s)@([a-z0-9_]*)$/i);
+  if (!m || !S.chat || (S.chat.type !== "group" && S.chat.type !== "channel")) return false;
+  const q = m[1].toLowerCase(), ids = (S.chat.group?.members || []).slice(0, 80), missing = ids.filter(uid => !S.users.has(uid));
+  if (missing.length) { ensureUsers(missing).then(() => { if ($("#input").value === v) mentionSuggest(); }); }
+  const list = ids
+    .map(uid => [uid, S.users.get(uid)])
+    .filter(([, u]) => u && u.username && u.username.toLowerCase().startsWith(q)).slice(0, 8);
+  if (!list.length) return false;
+  const pop = $("#quickPop"); pop.innerHTML = list.map(([uid, u], i) => `<button type="button" data-mention="${i}"><b>@${esc(u.username)}</b><span>${esc(u.name || uid)}</span></button>`).join("");
+  pop.classList.remove("hidden");
+  pop.onclick = e => { const b = e.target.closest("[data-mention]"); if (!b) return; const u = list[+b.dataset.mention][1]; input.value = v.slice(0, m.index + (m[0].startsWith("@") ? 0 : m[0].length - m[1].length - 1)) + "@" + u.username + " "; hideQuick(); input.focus(); saveDraft(); };
+  return true;
+}
+function draftKey() { return S.chat ? "draft_" + S.chat.id : ""; }
+function saveDraft() { const k = draftKey(); if (!k) return; const v = $("#input").value; if (v) LS.set(k, v.slice(0, 2000)); else { try { localStorage.removeItem("es_" + k); } catch {} } }
 function quickSuggest() {
+  if (mentionSuggest()) return;
   const v = $("#input").value; if (!v.startsWith("/")) return hideQuick();
   const t = v.slice(1).toLowerCase(), list = S.prefs.quick.filter(q => q.k.toLowerCase().startsWith(t)).slice(0, 6);
   if (!list.length) return hideQuick();
@@ -1333,6 +1419,7 @@ function quickSuggest() {
   pop.onclick = e => { const b = e.target.closest("[data-i]"); if (!b) return; $("#input").value = list[+b.dataset.i].t; hideQuick(); $("#input").focus(); };
 }
 $("#input").addEventListener("input", () => {
+  saveDraft();
   quickSuggest();
   const c = S.chat; if (!c || !c.peer || !$("#input").value.trim() || (S.me && S.me.hideLastSeen)) return;
   if (Date.now() - c.sentTyping < 2500) return;
@@ -1343,8 +1430,8 @@ $("#form").onsubmit = async e => {
   e.preventDefault();
   const text = $("#input").value.trim(); if (!text || !S.chat) return;
   const c = S.chat, payload = { text }; if (c.reply) payload.reply = c.reply;
-  $("#input").value = ""; c.reply = null; paintReply(); hideQuick();
-  try { await sendTo(c, payload); } catch (er) { console.error(er); $("#input").value = text; if (er.message !== "blocked") toast("الرسالة ماتبعتتش"); }
+  $("#input").value = ""; saveDraft(); c.reply = null; paintReply(); hideQuick();
+  try { await sendTo(c, payload); } catch (er) { console.error(er); $("#input").value = text; saveDraft(); if (er.message !== "blocked") toast("الرسالة ماتبعتتش"); }
 };
 function compressImage(file, max = 960, q = 0.72) {
   return new Promise((res, rej) => {
@@ -1371,17 +1458,81 @@ async function sendFile(file) {
   try { const raw = new Uint8Array(await file.arrayBuffer()); const data = btoa(String.fromCharCode(...raw)); await sendTo(S.chat, { file: { name: file.name.slice(0, 120), type: file.type || "application/octet-stream", bytes: file.size, data } }); toast("اتبعث الملف مشفّر"); }
   catch { toast("الملف ماتبعتش"); }
 }
+let voiceRecorder = null, voiceChunks = [], voiceTimer = 0, voiceStarted = 0;
+function setVoiceState(active) { const b = $("#voiceBtn"); if (!b) return; b.classList.toggle("recording", active); b.textContent = active ? "⏹" : "🎙"; b.title = active ? "إيقاف التسجيل" : "رسالة صوتية"; }
+function bytesToB64(bytes) { let out = ""; for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(out); }
+async function finishVoice() {
+  const r = voiceRecorder; if (!r) return;
+  voiceRecorder = null; clearTimeout(voiceTimer); setVoiceState(false);
+  try { if (r.state !== "inactive") r.stop(); } catch {}
+}
+async function startVoice() {
+  if (!S.chat || !S.chat.peer) return toast("الرسائل الصوتية المشفّرة متاحة حاليًا في الخاص فقط");
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("المتصفح لا يدعم تسجيل الصوت");
+  if (voiceRecorder) return finishVoice();
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+    const r = new MediaRecorder(stream, { mimeType: type, audioBitsPerSecond: 24000 });
+    voiceRecorder = r; voiceChunks = []; voiceStarted = Date.now(); setVoiceState(true); toast("جاري التسجيل — اضغط الزر للإيقاف (45 ثانية كحد أقصى)");
+    r.ondataavailable = e => { if (e.data.size) voiceChunks.push(e.data); };
+    r.onerror = () => { stream.getTracks().forEach(t => t.stop()); voiceRecorder = null; setVoiceState(false); toast("تعذّر تسجيل الصوت"); };
+    r.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(voiceChunks, { type }); voiceChunks = [];
+      if (blob.size > 180 * 1024) return toast("التسجيل أكبر من 180 KB؛ قرّبه أو سجّل مدة أقصر");
+      try { const raw = new Uint8Array(await blob.arrayBuffer()); await sendTo(S.chat, { file: { name: "es-voice.webm", type, bytes: raw.byteLength, data: bytesToB64(raw) } }); toast("اتبعثت الرسالة الصوتية مشفّرة"); }
+      catch (e) { console.error(e); toast("الرسالة الصوتية ماتبعتتش"); }
+    };
+    r.start(250); voiceTimer = setTimeout(() => finishVoice(), 45000);
+  } catch (e) { console.error(e); setVoiceState(false); toast(e?.name === "NotAllowedError" ? "اسمح للموقع باستخدام الميكروفون" : "تعذّر تشغيل الميكروفون"); }
+}
+const ES_STICKERS = [
+  ["⚡", "طاقة ES"], ["👑", "ملك الشات"], ["🔥", "حماس"], ["💙", "قلب أزرق"],
+  ["🚀", "انطلق"], ["🎯", "في الهدف"], ["😂", "ضحكة"], ["🤝", "اتفقنا"],
+  ["🫡", "تمام يا قائد"], ["✨", "لمعة"], ["🔒", "خاص وآمن"], ["🎉", "احتفال"]
+];
+const customStickerGet = () => LS.get("custom_stickers", []).filter(x => x && x.img && String(x.img).startsWith("data:image/")).slice(-24);
+const stickerFavGet = () => LS.get("sticker_favs", []);
+function stickerItems() {
+  const base = ES_STICKERS.map(([emoji, label], i) => ({ id: "b" + i, emoji, label }));
+  return [...base, ...customStickerGet().map((x, i) => ({ ...x, id: "c" + i }))];
+}
+async function addCustomSticker(file) {
+  if (!file || !S.chat?.peer) return;
+  if (file.size > 2 * 1024 * 1024) return toast("صورة الملصق أكبر من 2 MB");
+  try {
+    const img = await compressImage(file, 320, 0.62);
+    if (img.length > 72000) return toast("الملصق أكبر من 70 KB بعد الضغط");
+    const list = [...customStickerGet(), { img, label: "ملصق شخصي", at: Date.now() }].slice(-24); LS.set("custom_stickers", list); toast("اتضافت للمكتبة على جهازك"); openStickerPicker();
+  } catch { toast("ملف الملصق غير صالح"); }
+}
+function openStickerPicker() {
+  if (!S.chat?.peer) return toast("الملصقات المشفّرة متاحة حاليًا في الخاص فقط");
+  const items = stickerItems(), favs = stickerFavGet();
+  const tile = (x, i) => `<button type="button" class="sticker-pick ${favs.includes(x.id) ? "fav" : ""}" data-sticker="${i}"><i data-fav="${esc(x.id)}">${favs.includes(x.id) ? "★" : "☆"}</i>${x.img ? `<img src="${esc(x.img)}" alt="">` : `<span>${esc(x.emoji)}</span>`}<small>${esc(x.label)}</small></button>`;
+  const favItems = items.filter(x => favs.includes(x.id));
+  const sh = openModal(`<div class="menu"><div class="menu-h">ملصقات ES Chat Pro</div><div class="sticker-actions"><button type="button" class="btn-mini" id="addSticker">+ إضافة من الجهاز</button></div>${favItems.length ? `<div class="panel-h">المفضلة</div><div class="sticker-grid">${favItems.map((x, i) => tile(x, items.indexOf(x))).join("")}</div>` : ""}<div class="panel-h">كل الملصقات</div><div class="sticker-grid">${items.map(tile).join("")}</div><div class="hint">المفضلة والملصقات الشخصية محفوظة على جهازك، والملصق يُرسل مشفّرًا في الخاص.</div></div>`);
+  sh.querySelector("#addSticker").onclick = () => $("#fileSticker").click();
+  sh.querySelector(".sticker-grid").onclick = async e => {
+    const f = e.target.closest("[data-fav]"); if (f) { const id = f.dataset.fav, next = favs.includes(id) ? favs.filter(x => x !== id) : [...favs, id].slice(-30); LS.set("sticker_favs", next); closeModal(); openStickerPicker(); return; }
+    const b = e.target.closest("[data-sticker]"); if (!b) return; const x = items[+b.dataset.sticker]; closeModal(); try { await sendTo(S.chat, { sticker: x.img ? { img: x.img, label: x.label } : { emoji: x.emoji, label: x.label } }); } catch { toast("الملصق ماتبعتش"); }
+  };
+}
 $("#fileImg").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
 $("#fileCam").onchange = e => { sendImage(e.target.files[0]); e.target.value = ""; };
 $("#fileDoc").onchange = e => { sendFile(e.target.files[0]); e.target.value = ""; };
+$("#fileSticker").onchange = e => { addCustomSticker(e.target.files[0]); e.target.value = ""; };
+$("#voiceBtn").onclick = startVoice;
 $("#attachBtn").onclick = () => {
   if (!S.chat || $("#input").disabled) return;
   const ST = S.site || {}, ow = isOwner(), okI = ow || ST.allowImages !== false, okF = ow || ST.allowFiles !== false, okL = ow || ST.allowLoc !== false, okP = ow || ST.allowPolls !== false;
   const sh = openModal(`<div class="menu"><div class="menu-h">إرفاق</div>
-    ${okI ? `<button class="mrow" data-a="img"><span>صورة من المعرض</span></button><button class="mrow" data-a="cam"><span>الكاميرا</span></button>` : ""}${S.chat.peer && okF ? `<button class="mrow" data-a="file"><span>ملف صغير مشفّر (حتى 180 KB)</span></button>` : ""}${okL ? `<button class="mrow" data-a="loc"><span>موقعي الحالي</span></button>` : ""}${okP ? `<button class="mrow" data-a="poll"><span>استفتاء</span></button>` : ""}</div>`);
+    ${S.chat.peer ? `<button class="mrow" data-a="sticker"><span>ملصقات ES Chat Pro</span></button>` : ""}${okI ? `<button class="mrow" data-a="img"><span>صورة من المعرض</span></button><button class="mrow" data-a="cam"><span>الكاميرا</span></button>` : ""}${S.chat.peer && okF ? `<button class="mrow" data-a="file"><span>ملف صغير مشفّر (حتى 180 KB)</span></button>` : ""}${okL ? `<button class="mrow" data-a="loc"><span>موقعي الحالي</span></button>` : ""}${okP ? `<button class="mrow" data-a="poll"><span>استفتاء</span></button>` : ""}</div>`);
   sh.querySelector(".menu").onclick = e => {
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
-    if (a === "poll") openPollMaker();
+    if (a === "sticker") openStickerPicker();
+    else if (a === "poll") openPollMaker();
     else if (a === "img") $("#fileImg").click();
     else if (a === "cam") $("#fileCam").click();
     else if (a === "file") $("#fileDoc").click();
@@ -1448,8 +1599,8 @@ async function openGroup(gid) {
   S.chat = { id: gid, type: g.kind, peer: null, group: g, first: true, reply: null, doc: null, sig: "", cleaned: new Set(), lastTyping: undefined, typingAt: 0, sentTyping: 0, sentRead: 0 };
   $("#composerWrap").classList.remove("hidden"); $("#app").classList.add("open"); layerOpen("chat", chatUiClose);
   $("#messages").innerHTML = ""; paintReply(); hideQuick(); markRead(gid); applyComposerState(); paintHead(); renderList();
-  S.unsub.msgs = onSnapshot(query(collection(db, "groups", gid, "messages"), orderBy("at"), limitToLast(150)),
-    snap => { S.chat && S.chat.id === gid && renderMsgs(snap.docs); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
+  S.unsub.msgs = onSnapshot(query(collection(db, "groups", gid, "messages"), orderBy("at"), limitToLast(MSG_PAGE)),
+    snap => { if (S.chat && S.chat.id === gid) renderMsgs(liveMsgs(S.chat, snap)); }, e => { console.error(e); toast("مفيش صلاحية لقراءة الرسايل — راجع قواعد Firestore"); });
   S.unsub.gdoc = onSnapshot(doc(db, "groups", gid), s => {
     if (!S.chat || S.chat.id !== gid) return;
     if (!s.exists()) { toast("اتحذفت"); showEmpty(); return; }
@@ -1513,10 +1664,28 @@ async function leaveGroup(g) {
 /* قايمة جديد + اكتشاف القنوات */
 function openNewMenu() {
   const sh = openModal(`<div class="menu"><div class="menu-h">جديد</div>
-    <button class="mrow" data-a="group"><span>مجموعة جديدة</span></button><button class="mrow" data-a="channel"><span>قناة جديدة</span></button><button class="mrow" data-a="find"><span>استكشاف القنوات</span></button></div>`);
-  sh.querySelector(".menu").onclick = e => { const b = e.target.closest("[data-a]"); if (!b) return; closeModal(); b.dataset.a === "find" ? openDiscover() : openCreate(b.dataset.a); };
+    <button class="mrow" data-a="story"><span>حالة جديدة</span></button><button class="mrow" data-a="stories"><span>مشاهدة الحالات</span></button><button class="mrow" data-a="group"><span>مجموعة جديدة</span></button><button class="mrow" data-a="channel"><span>قناة جديدة</span></button><button class="mrow" data-a="find"><span>استكشاف القنوات</span></button></div>`);
+  sh.querySelector(".menu").onclick = e => { const b = e.target.closest("[data-a]"); if (!b) return; closeModal(); if (b.dataset.a === "find") openDiscover(); else if (b.dataset.a === "story") openStoryComposer(); else if (b.dataset.a === "stories") openStories(); else openCreate(b.dataset.a); };
 }
 $("#newBtn").onclick = openNewMenu;
+async function openStoryComposer() {
+  const contacts = S.chats.map(c => { const id = peerOf(c), u = S.users.get(id) || {}; return { id, u }; }).filter(x => x.id && x.u.username);
+  const sh = openModal(`<div class="menu"><div class="menu-h">حالة جديدة</div><div class="field"><label for="storyText">النص</label><textarea id="storyText" maxlength="2000" rows="4" placeholder="اكتب حالة..." style="width:100%"></textarea></div><div class="field"><button type="button" class="btn-ghost" id="storyPick">إضافة صورة</button><span class="hint" id="storyFileName">اختياري</span></div><div class="field"><label for="storyAudience">مين يشوفها؟</label><select id="storyAudience"><option value="public">الكل</option><option value="contacts">جهات الاتصال</option><option value="custom">أشخاص محددون</option></select></div><div id="storyCustom" class="story-custom hidden">${contacts.length ? contacts.map(x => `<label class="check-row"><input type="checkbox" value="${esc(x.id)}"><span>${esc(x.u.name || x.u.username)} <bdi>@${esc(x.u.username)}</bdi></span></label>`).join("") : `<div class="hint">لا توجد جهات اتصال جاهزة.</div>`}</div><button type="button" class="btn-primary" id="storySend">نشر الحالة</button></div>`);
+  let img = "";
+  const pick = sh.querySelector("#storyPick"), file = $("#storyFile");
+  pick.onclick = () => file.click();
+  file.onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; if (f.size > 2 * 1024 * 1024) return toast("الصورة أكبر من 2 MB"); try { img = await compressImage(f, 720, .68); if (img.length >= 180000) { img = ""; return toast("الصورة أكبر من الحد بعد الضغط"); } sh.querySelector("#storyFileName").textContent = "تم اختيار صورة"; } catch { toast("الصورة غير صالحة"); } };
+  sh.querySelector("#storyAudience").onchange = e => sh.querySelector("#storyCustom").classList.toggle("hidden", e.target.value !== "custom");
+  sh.querySelector("#storySend").onclick = async () => { const text = sh.querySelector("#storyText").value.trim(), audience = sh.querySelector("#storyAudience").value, custom = [...sh.querySelectorAll("#storyCustom input:checked")].map(x => x.value); if (!text && !img) return toast("اكتب نص أو أضف صورة"); if (audience === "custom" && !custom.length) return toast("اختار شخصًا واحدًا على الأقل"); const b = sh.querySelector("#storySend"); b.disabled = true; try { const ref = await addDoc(collection(db, "stories", S.user.uid, "items"), { uid: S.user.uid, text, img, audience, custom, createdAt: serverTimestamp(), expiresAt: new Date(Date.now() + 86400000) }); const ix = await getDoc(doc(db, "users", S.user.uid, "public", "storyIndex")); const ids = ix.exists() ? (ix.data().ids || []) : []; await setDoc(doc(db, "users", S.user.uid, "public", "storyIndex"), { uid: S.user.uid, ids: [...ids.filter(x => x !== ref.id), ref.id].slice(-20), updatedAt: serverTimestamp() }, { merge: true }); closeModal(); toast("اتنشرت الحالة لمدة 24 ساعة"); } catch (e) { console.error(e); b.disabled = false; toast("تعذّر نشر الحالة"); } };
+}
+async function openStories() {
+  const owners = [S.user.uid, ...S.chats.map(peerOf).filter(Boolean).slice(0, 30)], sh = openModal(`<div class="menu"><div class="menu-h">الحالات</div><div id="storyList"><div class="empty-list">جاري تحميل الحالات...</div></div></div>`), out = sh.querySelector("#storyList");
+  const rows = [];
+  for (const uid of [...new Set(owners)]) { try { const ix = await getDoc(doc(db, "users", uid, "public", "storyIndex")); if (!ix.exists()) continue; for (const sid of (ix.data().ids || []).slice(-20).reverse()) { const s = await getDoc(doc(db, "stories", uid, "items", sid)); if (!s.exists() || !toDate(s.data().expiresAt) || toDate(s.data().expiresAt) <= new Date()) continue; rows.push({ id: sid, uid, ...s.data() }); } } catch {} }
+  await ensureUsers(rows.map(x => x.uid));
+  out.innerHTML = rows.length ? rows.map((x, i) => { const u = x.uid === S.user.uid ? S.me : (S.users.get(x.uid) || {}); return `<div class="story-card" data-story="${i}">${x.img ? `<img src="${esc(x.img)}" alt="">` : ""}<div class="story-body"><b>${esc(u.name || "مستخدم")}</b><small>${fmtDT(x.createdAt)}</small>${x.text ? `<p>${mentionHtml(x.text, false)}</p>` : ""}</div>${x.uid === S.user.uid ? `<button class="btn-danger sm" data-del="${i}">حذف</button>` : ""}</div>`; }).join("") : `<div class="empty-list">مفيش حالات متاحة حاليًا.</div>`;
+  out.onclick = async e => { const d = e.target.closest("[data-del]"); if (d) { const x = rows[+d.dataset.del]; if (!confirm("تحذف الحالة؟")) return; try { await deleteDoc(doc(db, "stories", S.user.uid, "items", x.id)); const ix = await getDoc(doc(db, "users", S.user.uid, "public", "storyIndex")); await setDoc(doc(db, "users", S.user.uid, "public", "storyIndex"), { uid: S.user.uid, ids: (ix.data()?.ids || []).filter(id => id !== x.id), updatedAt: serverTimestamp() }, { merge: true }); closeModal(); toast("اتحذفت الحالة"); } catch { toast("تعذّر الحذف"); } return; } const card = e.target.closest("[data-story]"); if (!card) return; const x = rows[+card.dataset.story]; if (x.uid !== S.user.uid) setDoc(doc(db, "stories", x.uid, "items", x.id, "views", S.user.uid), { uid: S.user.uid, at: serverTimestamp() }, { merge: true }).catch(() => {}); };
+}
 async function openDiscover() {
   const sh = openModal(`<div class="menu"><div class="menu-h">استكشاف القنوات</div><div id="dList"><div class="empty-list">جاري التحميل...</div></div></div>`);
   let list = [];
@@ -1720,18 +1889,29 @@ function openEditGroup(g) {
 function openGroupMenu(gid) {
   const g = S.groups.find(x => x.id === gid); if (!g) return;
   const P = S.prefs, owner = g.owner === S.user.uid;
-  const rows = [["info", g.kind === "channel" ? "معلومات القناة" : "معلومات المجموعة"], ["pin", P.pins.includes(gid) ? "إلغاء تثبيت المحادثة" : "تثبيت المحادثة"], ["arch", P.arch.includes(gid) ? "إلغاء الأرشفة" : "أرشفة المحادثة"],
-    ["mute", P.mute.includes(gid) ? "إلغاء كتم الإشعارات" : "كتم الإشعارات"], ["lbl", "التصنيفات"], ...(owner ? [] : [["leave", g.kind === "channel" ? "إلغاء المتابعة" : "الخروج من المجموعة", "", true]])];
+  const rows = [["info", g.kind === "channel" ? "معلومات القناة" : "معلومات المجموعة"], ...(g.kind === "group" ? [["topics", "مواضيع المجموعة"]] : []), ["pin", P.pins.includes(gid) ? "إلغاء تثبيت المحادثة" : "تثبيت المحادثة"], ["arch", P.arch.includes(gid) ? "إلغاء الأرشفة" : "أرشفة المحادثة"],
+    ["mute", P.mute.includes(gid) ? "إلغاء كتم الإشعارات" : "كتم الإشعارات"], ["lbl", "مجلدات الدردشة"], ...(owner ? [] : [["leave", g.kind === "channel" ? "إلغاء المتابعة" : "الخروج من المجموعة", "", true]])];
   const sh = openModal(`<div class="menu"><div class="menu-h">${esc(g.name)}</div>${rows.map(([a, t, v, d]) => `<button class="mrow ${d ? "danger" : ""}" data-a="${a}"><span>${t}</span></button>`).join("")}</div>`);
   sh.querySelector(".menu").onclick = e => {
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
     if (a === "info") openGroupInfo(gid);
+    else if (a === "topics") openTopics(gid);
     else if (a === "pin") { if (!P.pins.includes(gid) && P.pins.length >= 3) return toast("أقصى حاجة 3 محادثات مثبتة"); savePrefs({ pins: toggleIn(P.pins, gid) }); }
     else if (a === "arch") savePrefs({ arch: toggleIn(P.arch, gid) });
     else if (a === "mute") savePrefs({ mute: toggleIn(P.mute, gid) });
     else if (a === "lbl") openLabelPicker(gid);
     else if (a === "leave") leaveGroup(g);
   };
+}
+async function openTopics(gid) {
+  const g = await fetchGroup(gid); if (!g || !isGMember(g)) return toast("الموضوعات متاحة لأعضاء المجموعة فقط");
+  const admin = isGAdmin(g), sh = openModal(`<div class="menu"><div class="menu-h">مواضيع المجموعة</div><p class="sub">اختار موضوعًا لتجميع الرسائل. الحالي: <b id="topicCurrent">${esc((S.chat && S.chat.id === gid && S.chat.topicName) || "الكل")}</b></p><div id="topicList"><div class="empty-list">جاري التحميل...</div></div>${admin ? `<div class="field"><input id="topicName" maxlength="40" placeholder="اسم موضوع جديد"></div><button class="btn-primary" id="topicAdd">إضافة موضوع</button>` : ""}</div>`), out = sh.querySelector("#topicList");
+  let topics = [];
+  try { topics = (await getDocs(collection(db, "groups", gid, "topics"))).docs.map(d => ({ id: d.id, ...d.data() })).filter(t => !t.archived).sort((a, b) => (toDate(a.createdAt)?.getTime() || 0) - (toDate(b.createdAt)?.getTime() || 0)); } catch { out.innerHTML = `<div class="empty-list">تعذّر تحميل المواضيع.</div>`; return; }
+  const draw = () => { out.innerHTML = `<button class="topic-row ${!(S.chat && S.chat.topicId) ? "on" : ""}" data-topic=""><b>الكل</b><small>كل رسائل المجموعة</small></button>` + (topics.length ? topics.map(t => `<button class="topic-row ${(S.chat && S.chat.topicId === t.id) ? "on" : ""}" data-topic="${esc(t.id)}"><b># ${esc(t.name)}</b><small>${t.createdBy === S.user.uid ? "من إنشائك" : "موضوع المجموعة"}</small>${admin ? `<i data-archive="${esc(t.id)}">إخفاء</i>` : ""}</button>`).join("") : `<div class="empty-list">مفيش مواضيع لسه.</div>`); };
+  draw();
+  out.onclick = async e => { const ar = e.target.closest("[data-archive]"); if (ar) { e.stopPropagation(); try { await updateDoc(doc(db, "groups", gid, "topics", ar.dataset.archive), { archived: true }); topics = topics.filter(t => t.id !== ar.dataset.archive); draw(); } catch { toast("تعذّر إخفاء الموضوع"); } return; } const b = e.target.closest("[data-topic]"); if (!b) return; if (S.chat && S.chat.id === gid) { const t = topics.find(x => x.id === b.dataset.topic); S.chat.topicId = b.dataset.topic || ""; S.chat.topicName = t?.name || "الكل"; if (S.chat.lastDocs) renderMsgsPlain(S.chat.lastDocs); } closeModal(); toast(b.dataset.topic ? "اتحدد الموضوع: " + (topics.find(x => x.id === b.dataset.topic)?.name || "") : "هتظهر كل مواضيع المجموعة"); };
+  const add = sh.querySelector("#topicAdd"); if (add) add.onclick = async () => { const name = sh.querySelector("#topicName").value.trim(); if (!name) return toast("اكتب اسم الموضوع"); add.disabled = true; try { const r = await addDoc(collection(db, "groups", gid, "topics"), { name, createdBy: S.user.uid, createdAt: serverTimestamp(), archived: false }); topics.push({ id: r.id, name, createdBy: S.user.uid, archived: false }); sh.querySelector("#topicName").value = ""; draw(); toast("اتضاف الموضوع"); } catch { toast("تعذّر إضافة الموضوع"); } add.disabled = false; };
 }
 async function openByHandle(h) {
   try {

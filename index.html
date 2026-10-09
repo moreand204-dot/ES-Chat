@@ -81,6 +81,8 @@
     <header class="chatbar" id="chatbar">
       <button class="back" id="back" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div id="chatHead" class="chat-head"></div>
+      <button class="icon-btn hidden" id="callAudioBtn" aria-label="مكالمة صوتية" title="مكالمة صوتية">☎</button>
+      <button class="icon-btn hidden" id="callVideoBtn" aria-label="مكالمة فيديو" title="مكالمة فيديو">▣</button>
       <button class="icon-btn hidden" id="chatSearchBtn" aria-label="بحث في المحادثة"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <button class="icon-btn hidden" id="chatMenuBtn" aria-label="خيارات المحادثة"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="5" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="19" r="1.8" fill="currentColor"/></svg></button>
     </header>
@@ -93,6 +95,7 @@
       <form class="composer" id="form">
         <button type="button" class="attach" id="attachBtn" aria-label="إرفاق"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M21 11.5 12.5 20a5.5 5.5 0 0 1-7.8-7.8l9-9a3.7 3.7 0 0 1 5.2 5.2l-9 9a1.8 1.8 0 0 1-2.6-2.6L15 7.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <input id="input" placeholder="اكتب رسالة..." autocomplete="off" maxlength="2000">
+        <button type="button" class="voice" id="voiceBtn" aria-label="رسالة صوتية" title="رسالة صوتية">🎙</button>
         <button class="send" aria-label="إرسال"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 11.5 21 3l-8.5 18-2-7.5L3 11.5z" fill="currentColor"/></svg></button>
       </form>
     </div>
@@ -103,6 +106,8 @@
 <input type="file" id="fileImg" accept="image/*" hidden>
 <input type="file" id="fileCam" accept="image/*" capture="environment" hidden>
 <input type="file" id="fileDoc" hidden>
+<input type="file" id="fileSticker" accept="image/*" hidden>
+<input type="file" id="storyFile" accept="image/*" hidden>
 <div id="toast" class="toast"></div>
 <div id="netBar" class="net-bar hidden">مفيش اتصال بالنت — الرسايل هتتبعت أول ما يرجع</div>
 
@@ -117,7 +122,7 @@
   }, 8000);
 </script>
 <script type="module">
-  import("./app.js?v=25").catch(err => {
+  import("./app.js?v=28").catch(err => {
     const e = document.getElementById("bootError");
     if (e) {
       e.hidden = false;

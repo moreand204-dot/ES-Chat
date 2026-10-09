@@ -1,0 +1,15 @@
+
+
+7) توسيع Bot API بالعربية والإنجليزية:
+- إضافة عمليات إدارة شبيهة بـ BotFather: token، setname، setdescription، setabouttext، setcommands، setinline، setinlinegeo، setjoingroups، setprivacy، setsettings، enable، disable، deletebot.
+- دعم أسماء وأوصاف ونبذات وأوامر بالعربية والإنجليزية.
+- تدوير رمز البوت وإبطال الرمز القديم دون كشفه مرة أخرى.
+- دعم textAr وtextEn للرسائل، بحيث تختار الواجهة اللغة المناسبة للحساب.
+- دعم أزرار HTTPS ثنائية اللغة داخل رسائل البوت، مع رفض الروابط غير الآمنة وJavaScript الخام.
+- تحديد 8 أزرار كحد أقصى و2000 حرف للنص.
+- تحديث عرض الرسائل لإظهار الأزرار بالعربية أو الإنجليزية بأمان.
+
+اختبارات التوسعة:
+- فحص app.js وe2ee.js وapi/notify.js وapi/bot.js: ناجح.
+- security-regression.test.py: 22/22 ناجحة.
+- BOT_BILINGUAL_BUTTONS_CHECK_OK.
