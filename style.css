@@ -628,3 +628,8 @@ button>.ico{margin:auto}
 .bf-composer-wrap{padding:6px max(10px,3vw) max(10px,env(safe-area-inset-bottom));flex:0 0 auto}
 .bf-bs{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}
 .bf-bs .bf-b{margin:0;text-align:center}
+
+.mlink{color:var(--ice);text-decoration:underline;text-underline-offset:3px;word-break:break-all;-webkit-user-select:text;user-select:text;direction:ltr;unicode-bidi:embed}
+.pv-name{text-align:center;font-weight:700;margin:2px 0 10px}
+.bf-av,.bf-avatar{overflow:hidden}.bf-av img,.bf-avatar img{width:100%;height:100%;object-fit:cover}
+.avatar img{cursor:zoom-in}

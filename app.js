@@ -198,7 +198,7 @@ const badge = (u, s = 16) => u && u.uid && isOfficial(u.uid) ? ownerBadge(s) : u
   : "";
 const avatar = (u, cls = "") => {
   const p = u && u.photo;
-  return `<div class="avatar ${cls}">${p && p.startsWith("data:image/") ? `<img src="${esc(p)}" alt="">` : esc(((u && u.name) || "?").trim().charAt(0).toUpperCase())}</div>`;
+  return `<div class="avatar ${cls}"${u && u.uid ? ` data-au="${esc(u.uid)}"` : ""}>${p && p.startsWith("data:image/") ? `<img src="${esc(p)}" alt="">` : esc(((u && u.name) || "?").trim().charAt(0).toUpperCase())}</div>`;
 };
 const CROWN = `<svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 18h18l-1.5-9-4.5 4-3-6-3 6-4.5-4L3 18z" fill="currentColor"/></svg>`;
 const genderText = g => (g === "female" ? "أنثى" : g === "male" ? "ذكر" : "—");
@@ -647,8 +647,10 @@ const bfTime = t => new Date(t || Date.now()).toLocaleTimeString("ar-EG", { hour
 async function resolveBotFather() {
   if (S.bfUid !== undefined) return;
   S.bfUid = null;
-  try { const s = await getDoc(doc(db, "usernames", BOTFATHER_USERNAME)); if (s.exists()) { S.bfUid = s.data().uid || null; const l = $("#list"); if (l) l._h = ""; renderList(); } } catch {}
+  try { const s = await getDoc(doc(db, "usernames", BOTFATHER_USERNAME)); if (s.exists()) { S.bfUid = s.data().uid || null; try { const pr = await getDoc(doc(db, "users", S.bfUid, "public", "profile")); if (pr.exists()) { const d = pr.data(); S.bf = { name: String(d.name || "").trim(), photo: String(d.photo || "").startsWith("data:image/") ? d.photo : "" }; } } catch {} const l = $("#list"); if (l) l._h = ""; renderList(); } } catch {}
 }
+const bfName = () => (S.bf && S.bf.name) || "ES BotFather";
+const bfAv = (cls = "") => S.bf && S.bf.photo ? `<img src="${esc(S.bf.photo)}" alt="">` : "🤖";
 const botfatherBadge = s => `<span class="vbadge-wrap" title="بوت فازر الرسمي" aria-label="بوت فازر الرسمي"><svg class="vbadge" width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#7c3aed"/><rect x="6.5" y="8.5" width="11" height="8" rx="2.2" fill="#fff"/><path d="M12 8.5V6.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="5.7" r="1.1" fill="#fff"/><circle cx="9.7" cy="12.3" r="1.2" fill="#7c3aed"/><circle cx="14.3" cy="12.3" r="1.2" fill="#7c3aed"/></svg></span>`;
 async function botApi(payload) {
   let r;
@@ -666,8 +668,16 @@ async function botApi(payload) {
   }
   return j;
 }
-function openBotFather() {
-  const sh = openModal(`<div class="bf-head"><button type="button" class="sp-back" id="bfBack" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="bf-av">🤖</div><div class="bf-t"><b>ES BotFather ${botfatherBadge(16)}</b><small>البوت الرسمي لإنشاء وإدارة البوتات</small></div></div>
+async function loadBfProfile() {
+  try {
+    if (!S.bfUid) return;
+    const d = S.user.uid === S.bfUid && S.me ? S.me : (await getDoc(doc(db, "users", S.bfUid, "public", "profile"))).data();
+    if (d) S.bf = { name: String(d.name || "").trim(), photo: String(d.photo || "").startsWith("data:image/") ? d.photo : "" };
+  } catch {}
+}
+async function openBotFather() {
+  await loadBfProfile();
+  const sh = openModal(`<div class="bf-head"><button type="button" class="sp-back" id="bfBack" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="bf-av">${bfAv()}</div><div class="bf-t"><b>${esc(bfName())} ${botfatherBadge(16)}</b><small>البوت الرسمي لإنشاء وإدارة البوتات</small></div></div>
     <div class="bf-log" id="bfLog"></div><div class="bf-quick" id="bfQuick"></div>
     <div class="bf-composer-wrap"><form class="composer" id="bfForm"><input id="bfIn" placeholder="اكتب رسالة أو أمر (/help)" autocomplete="off" maxlength="600"><button type="submit" class="sendmic is-send" id="bfSend" aria-label="إرسال"><span class="i-send">${ic("send", 22)}</span></button></form></div>`);
   sh.classList.add("bf-sheet");
@@ -1125,10 +1135,18 @@ const dmId = peer => [S.user.uid, peer].sort().join("_");
 const ttlLabel = s => ({ 86400: "24 ساعة", 604800: "7 أيام", 7776000: "90 يوم" }[s] || "");
 const LABEL_COLORS = ["#4be0a0", "#ffd166", "#ff5c7a", "#2f6bff", "#b07cff", "#ff9f43"];
 const nameOf = uid => uid === S.user.uid ? "أنت" : ((S.users.get(uid) || {}).name || "مستخدم");
+function linkifyHtml(safe) {
+  return safe.replace(/(https?:\/\/[^\s<]+)/gi, raw => {
+    let url = raw, tail = ""; const m = url.match(/[).,;:!?؟،]+$/); if (m) { tail = m[0]; url = url.slice(0, -tail.length); }
+    let u; try { u = new URL(url.replace(/&amp;/g, "&")); } catch { return raw; }
+    const same = u.origin === location.origin && (u.searchParams.get("u") || u.searchParams.get("c") || u.searchParams.get("g"));
+    return `<a class="mlink" href="${url}" ${same ? `data-site="1"` : `target="_blank" rel="noopener noreferrer nofollow"`}>${url.replace(/^https?:\/\//, "")}</a>${tail}`;
+  });
+}
 function mentionHtml(text, enabled = false) {
   const safe = esc(text);
-  if (!enabled) return safe;
-  return safe.replace(/(^|\s)(@[a-z0-9_]{3,20})\b/gi, '$1<mark class="mention">$2</mark>');
+  if (!enabled) return linkifyHtml(safe);
+  return linkifyHtml(safe).replace(/(^|\s)(@[a-z0-9_]{3,20})\b/gi, '$1<mark class="mention">$2</mark>');
 }
 const prefsRef = () => doc(db, "users", S.user.uid, "data", "prefs");
 function savePrefs(patch) {
@@ -1236,7 +1254,7 @@ function renderListNow() {
     return (toDate(b.lastAt || b.createdAt)?.getTime() || 0) - (toDate(a.lastAt || a.createdAt)?.getTime() || 0);
   });
   h += `<div class="section">${f === "arch" ? "المؤرشفة" : "محادثاتك"}</div>`;
-  if (f === "all" && !nm && !term) h += `<div class="chat-item bf-row" data-bf="1"><div class="av-wrap"><div class="avatar bf-avatar">🤖</div></div><div class="chat-meta"><div class="row1"><div class="name">ES BotFather${botfatherBadge(15)}</div></div><div class="row2"><div class="preview">أنشئ وأدر بوتاتك</div></div></div></div>`;
+  if (f === "all" && !nm && !term) h += `<div class="chat-item bf-row" data-bf="1"><div class="av-wrap"><div class="avatar bf-avatar">${bfAv()}</div></div><div class="chat-meta"><div class="row1"><div class="name">${esc(bfName())}${botfatherBadge(15)}</div></div><div class="row2"><div class="preview">أنشئ وأدر بوتاتك</div></div></div></div>`;
   h += chats.length ? chats.map(c => {
     if (c._t !== "dm") return groupRow(c, um, P, PIN, MUTE);
     const pid = peerOf(c), u = S.users.get(pid) || { name: "مستخدم" }, n = um[c.id] || 0, muted = P.mute.includes(c.id);
@@ -1463,6 +1481,35 @@ function jumpTo(mid) {
   if (!el) return toast("الرسالة الأصلية مش موجودة");
   el.scrollIntoView({ block: "center", behavior: "smooth" }); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1400);
 }
+
+// فتح رابط موقعنا (بروفايل/قناة/مجموعة) جوه التطبيق من غير إعادة تحميل
+function openSiteLink(href) {
+  let u; try { u = new URL(href, location.origin); } catch { return false; }
+  if (u.origin !== location.origin) return false;
+  const p = u.searchParams, un = p.get("u"), cq = p.get("c"), gq = p.get("g"), k = p.get("k");
+  if (un) { openByUsername(un); return true; }
+  if (cq) { openByHandle(cq); return true; }
+  if (gq) { if (k) try { sessionStorage.es_k = gq + "." + k; } catch {} openGroup(gq); return true; }
+  return false;
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest && e.target.closest("a.mlink[data-site], a.lcard");
+  if (!a) return;
+  if (openSiteLink(a.getAttribute("href"))) e.preventDefault();
+}, true);
+
+// ضغطة على صورة شخص/قناة/مجموعة (جوه الهيدر، الرسايل، البروفايل، قوايم الأعضاء) = تفتح الصورة كبيرة
+document.addEventListener("click", e => {
+  const av = e.target.closest && e.target.closest(".avatar");
+  if (!av || !av.closest("#chatHead, #messages, .prof, .row-item, .lcard")) return;
+  const im = av.querySelector("img"); if (!im || !im.src) return;
+  e.preventDefault(); e.stopPropagation();
+  let name = "", open = null;
+  if (av.dataset.au) { const uid = av.dataset.au, u = uid === (S.user && S.user.uid) ? S.me : S.users.get(uid); name = (u && u.name) || ""; if (!av.closest(".prof")) open = () => { closeModal(); openProfile(uid); }; }
+  else if (av.dataset.ag) { const g = S.groups.find(x => x.id === av.dataset.ag); name = (g && g.name) || ""; if (!av.closest(".prof")) open = () => { closeModal(); openGroupInfo(av.dataset.ag); }; }
+  const sh = openModal(`<div class="pv-name">${esc(name)}</div><img class="full-img" src="${esc(im.src)}" alt=""><div class="actions">${open ? `<button type="button" class="btn-primary" id="pvOpen">فتح الملف</button>` : ""}<a class="btn-ghost" download="es-chat.jpg" href="${esc(im.src)}" style="display:grid;place-items:center;text-decoration:none">حفظ الصورة</a></div>`, true);
+  const o = sh.querySelector("#pvOpen"); if (o) o.onclick = open;
+}, true);
 function viewImage(src) {
   const sh = openModal(`<img class="full-img" src="${esc(src)}" alt=""><div class="actions"><a class="btn-ghost" download="es-chat.jpg" href="${esc(src)}" style="display:grid;place-items:center;text-decoration:none">حفظ الصورة</a></div>`, true);
 }
@@ -2118,7 +2165,7 @@ $("#attachBtn").onclick = () => {
 const isGMember = g => !!g && (g.members || []).includes(S.user.uid);
 const isGAdmin = g => !!g && isGMember(g) && (g.owner === S.user.uid || (g.admins || []).includes(S.user.uid));
 const gCount = g => (g.members || []).length + (g.kind === "channel" ? " متابع" : " عضو");
-const gAvatar = (g, cls = "") => `<div class="avatar ${g.kind === "channel" ? "chan" : "grp"} ${cls}">${g.photo && String(g.photo).startsWith("data:image/") ? `<img src="${esc(g.photo)}" alt="">` : esc((g.name || "?").trim().charAt(0).toUpperCase())}</div>`;
+const gAvatar = (g, cls = "") => `<div class="avatar ${g.kind === "channel" ? "chan" : "grp"} ${cls}"${g.id ? ` data-ag="${esc(g.id)}"` : ""}>${g.photo && String(g.photo).startsWith("data:image/") ? `<img src="${esc(g.photo)}" alt="">` : esc((g.name || "?").trim().charAt(0).toUpperCase())}</div>`;
 const CHAN_IC = `<svg class="mini-ic" width="14" height="14" viewBox="0 0 24 24" aria-label="قناة"><path d="M3 10v4l11 5V5L3 10zm13-1.5v7a3.5 3.5 0 0 0 0-7zM5 15l1 5h3l-1-4" fill="currentColor"/></svg>`;
 const inviteLink = g => g.kind === "channel" && g.handle && g.public ? `${location.origin}${location.pathname}?c=${g.handle}` : `${location.origin}${location.pathname}?g=${g.id}${g._k ? "&k=" + g._k : ""}`;
 const newKey = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), x => x.toString(16).padStart(2, "0")).join("");
@@ -2145,7 +2192,11 @@ async function hydrateLinkCards() {
       } else if (k === "c") {
         const h = await getDoc(doc(db, "handles", v));
         if (h.exists()) { const g = await getDoc(doc(db, "groupDirectory", h.data().gid)); if (g.exists()) d = { n: g.data().name, s: g.data().desc || "قناة", p: g.data().photo, t: "قناة" }; }
-      } else d = { n: "دعوة لمجموعة", s: "اضغط للانضمام", p: "", t: "مجموعة" };
+      } else {
+        d = { n: "دعوة لمجموعة", s: "اضغط للانضمام", p: "", t: "مجموعة" };
+        const g = await getDoc(doc(db, "groupDirectory", v));
+        if (g.exists()) d = { n: g.data().name, s: g.data().desc || (g.data().kind === "channel" ? "قناة" : "اضغط للانضمام"), p: g.data().photo, t: g.data().kind === "channel" ? "قناة" : "مجموعة" };
+      }
     } catch {}
     if (!d) { el.remove(); continue; }
     const ph = /^(https:\/\/|data:image\/)/.test(d.p || "") ? `<img src="${esc(d.p)}" alt="">` : `<span class="lc-ph">${esc((d.n || "?").slice(0, 1))}</span>`;
