@@ -192,7 +192,7 @@ function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add
 
 const isOfficial = uid => !!uid && !!S.site && S.site.ownerUid === uid;
 const ownerBadge = s => `<span class="vbadge-wrap owner-badge" title="المالك · حساب رسمي" aria-label="المالك · حساب رسمي"><svg class="vbadge" width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#f5b800"/><path d="M6 16.5h12l.8-7-3.6 3L12 7.8 8.8 12.5l-3.6-3z" fill="#3a2600"/><rect x="6" y="17.3" width="12" height="1.6" rx=".8" fill="#3a2600"/></svg></span>`;
-const badge = (u, s = 16) => u && u.uid && isOfficial(u.uid) ? ownerBadge(s) : u && u.verified
+const badge = (u, s = 16) => u && u.uid && isOfficial(u.uid) ? ownerBadge(s) : u && u.uid && S.bfUid && u.uid === S.bfUid ? botfatherBadge(s) : u && u.verified
   ? `<span class="vbadge-wrap" title="حساب موثّق داخل ES Chat" aria-label="حساب موثّق"><svg class="vbadge" width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#1877f2"/><path d="m7.1 12.2 3.1 3.1 6.8-7" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
   : "";
 const avatar = (u, cls = "") => {
@@ -313,7 +313,7 @@ function cleanup() {
   if (CALL) stopCallUI();
   Object.values(S.unsub).forEach(f => f && f());
   clearInterval(S.beatT); clearInterval(S.tickT); clearTimeout(S.typT);
-  S.unsub = {}; S.me = null; S.e2ee = { ready: false, error: "" }; S.chat = null; S.users = new Map(); S.chats = []; S.found = null; S.site = {}; S.seen = new Map(); S.chatsLoaded = false; S.fcm = null; S.prefs = DEFAULT_PREFS(); S.filter = "all"; S.groups = []; S.gseen = new Map(); S.groupsLoaded = false;
+  S.unsub = {}; S.bfUid = undefined; S.me = null; S.e2ee = { ready: false, error: "" }; S.chat = null; S.users = new Map(); S.chats = []; S.found = null; S.site = {}; S.seen = new Map(); S.chatsLoaded = false; S.fcm = null; S.prefs = DEFAULT_PREFS(); S.filter = "all"; S.groups = []; S.gseen = new Map(); S.groupsLoaded = false;
 }
 
 async function onAuth(user) {
@@ -348,7 +348,7 @@ async function onAuth(user) {
       setDoc(doc(db, "users", user.uid, "private", "account"), { uid: user.uid, email: user.email || "" }, { merge: true }).catch(() => {});
       if (owner && (!d.verified || d.role !== "owner")) updateDoc(ref, { verified: true, role: "owner" }).catch(() => {});
     }
-    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); syncPublicProfile(user.uid); route(); }, e => fail(e));
+    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); syncPublicProfile(user.uid); resolveBotFather(); route(); }, e => fail(e));
   } catch (e) {
     await fail(e);
   }
@@ -634,6 +634,120 @@ const ACCENTS = [["blue", "#2f6bff", "أزرق"], ["violet", "#8b5cf6", "بنف�
 const WALLS = [["dots", "نقط"], ["grid", "شبكة"], ["none", "سادة"]];
 function applyTheme() { const r = document.documentElement; r.dataset.accent = LS.get("accent", "blue"); r.dataset.wp = LS.get("wp", "dots"); r.dataset.fs = LS.get("fs", "m"); r.dataset.dens = LS.get("dens", "n"); r.dataset.motion = LS.get("motion", true) ? "on" : "off"; }
 applyTheme();
+/* ---------------- ES BotFather (حساب البوتات الرسمي) ----------------
+ * الحساب @t_i_j هو "بوت فازر" الموقع: أي حد يفتح محادثته (من البحث أو البروفايل) بيفتح الواجهة دي بدل محادثة مشفّرة عادية
+ * (حساب جوجل عادي مفيش حاجة بترد منه). الأوامر بتكلّم /api/bot بتوكن الدخول بتاعك. */
+const BOTFATHER_USERNAME = "t_i_j";
+const BF = { log: [], state: null, busy: false };
+async function resolveBotFather() {
+  if (S.bfUid !== undefined) return;
+  S.bfUid = null;
+  try { const s = await getDoc(doc(db, "usernames", BOTFATHER_USERNAME)); if (s.exists()) { S.bfUid = s.data().uid || null; const l = $("#list"); if (l) l._h = ""; renderList(); } } catch {}
+}
+const botfatherBadge = s => `<span class="vbadge-wrap" title="بوت فازر الرسمي" aria-label="بوت فازر الرسمي"><svg class="vbadge" width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#7c3aed"/><rect x="6.5" y="8.5" width="11" height="8" rx="2.2" fill="#fff"/><path d="M12 8.5V6.2" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="5.7" r="1.1" fill="#fff"/><circle cx="9.7" cy="12.3" r="1.2" fill="#7c3aed"/><circle cx="14.3" cy="12.3" r="1.2" fill="#7c3aed"/></svg></span>`;
+async function botApi(payload) {
+  let r;
+  try {
+    const t = await auth.currentUser.getIdToken();
+    r = await fetch("/api/bot", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify(payload) });
+  } catch { throw new Error("مفيش اتصال بالسيرفر"); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const code = j.code || "", err = j.error || "";
+    if (r.status === 404 && !err) throw new Error("ملف api/bot.js مش مرفوع على Vercel");
+    if (code === "env-missing" || code === "env-bad-json") throw new Error("متغير FIREBASE_SERVICE_ACCOUNT مش متضبط صح على Vercel (" + code + ")");
+    if (r.status === 429) throw new Error("طلبات كتير، استنى شوية");
+    throw new Error(err || ("خطأ " + r.status) + (j.detail ? " — " + j.detail : ""));
+  }
+  return j;
+}
+function openBotFather() {
+  const sh = openModal(`<div class="bf-head"><button type="button" class="sp-back" id="bfBack" aria-label="رجوع"><svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><div class="bf-av">🤖</div><div class="bf-t"><b>ES BotFather ${botfatherBadge(16)}</b><small>البوت الرسمي لإنشاء وإدارة البوتات</small></div></div>
+    <div class="bf-log" id="bfLog"></div><div class="bf-quick" id="bfQuick"></div>
+    <div class="bf-form"><input id="bfIn" placeholder="اكتب رد أو أمر (/help)" autocomplete="off" maxlength="600"><button type="button" class="btn-primary" id="bfSend">إرسال</button></div>`);
+  sh.classList.add("bf-sheet");
+  const log = sh.querySelector("#bfLog"), quick = sh.querySelector("#bfQuick"), inp = sh.querySelector("#bfIn");
+  const paint = () => {
+    log.innerHTML = BF.log.map(m => `<div class="bf-m ${m.me ? "me" : "bot"}">${m.html}</div>`).join("");
+    log.scrollTop = log.scrollHeight;
+    quick.innerHTML = [["newbot", "➕ بوت جديد"], ["mybots", "🤖 بوتاتي"], ["help", "❓ مساعدة"], ["cancel", "✖ إلغاء"]].map(([a, t]) => `<button type="button" data-a="${a}">${t}</button>`).join("");
+  };
+  const say = html => { BF.log.push({ html }); if (BF.log.length > 80) BF.log.shift(); paint(); };
+  const me = t => { BF.log.push({ me: true, html: esc(t) }); paint(); };
+  const err = e => say(`⚠️ ${esc(e.message || "حصل خطأ")}`);
+  const btn = (a, t, id) => `<button type="button" class="bf-b" data-a="${a}"${id ? ` data-id="${esc(id)}"` : ""}>${t}</button>`;
+  const HELP = `الأوامر:<br>/newbot — إنشاء بوت جديد<br>/mybots — عرض وإدارة بوتاتك<br>/cancel — إلغاء العملية الحالية<br><br>البوت بينشر في المجموعات والقنوات اللي بتضيفه عليها بالتوكن (شوف docs/BOT_API_AR.md). البوتات مش بتبعت في المحادثات الخاصة (عشان التشفير).`;
+  if (!BF.log.length) say(`أهلًا ${esc((S.me && S.me.name) || "")} 👋<br>أنا <b>ES BotFather</b>، من هنا بتعمل وتدير بوتاتك.<br><br>${HELP}`);
+  else paint();
+  const botMenu = async id => {
+    try {
+      const s = await getDoc(doc(db, "bots", id)); if (!s.exists()) return say("البوت مش موجود.");
+      const b = s.data(), st = b.settings || {};
+      say(`🤖 <b>${esc(b.name)}</b> ${b.active ? "🟢 شغال" : "🔴 موقوف"}<br><bdi dir="ltr">${esc(b.tokenPrefix || "")}…</bdi> · مجموعات: ${(b.groups || []).length} · أوامر: ${(b.commands || []).length}<br>
+        <div class="bf-bs">${btn("token", "🔑 توكن جديد", id)}${btn("rename", "✏️ الاسم", id)}${btn("desc", "📝 الوصف", id)}${btn("about", "ℹ️ النبذة", id)}${btn("cmds", "⌨️ الأوامر", id)}
+        ${btn("toggle", b.active ? "⏸ إيقاف" : "▶️ تشغيل", id)}${btn("joinG", st.joinGroups === false ? "➕ السماح بالمجموعات" : "🚫 منع المجموعات", id)}${btn("priv", st.privacy === false ? "🔒 تفعيل الخصوصية" : "🔓 إيقاف الخصوصية", id)}${btn("del", "🗑 حذف", id)}</div>`);
+    } catch (e) { err(e); }
+  };
+  const act = async (a, id) => {
+    if (BF.busy) return; BF.busy = true;
+    try {
+      if (a === "help") { me("/help"); say(HELP); }
+      else if (a === "cancel") { BF.state = null; me("/cancel"); say("تم الإلغاء."); }
+      else if (a === "newbot") { me("/newbot"); BF.state = { t: "newbot" }; say("تمام. اكتب <b>اسم</b> البوت (من 2 لـ 40 حرف):"); }
+      else if (a === "mybots") {
+        me("/mybots"); BF.state = null;
+        const q = await getDocs(query(collection(db, "bots"), where("owner", "==", S.user.uid)));
+        const list = q.docs.filter(d => !d.data().deleted);
+        say(list.length ? `بوتاتك (${list.length}):<div class="bf-bs">${list.map(d => btn("bot", `🤖 ${esc(d.data().name)} ${d.data().active ? "🟢" : "🔴"}`, d.id)).join("")}</div>` : `معندكش بوتات لسه. ابعت /newbot.`);
+      }
+      else if (a === "bot") await botMenu(id);
+      else if (a === "token") { if (!confirm("هيتبطّل التوكن القديم وهيتعمل توكن جديد. تكمل؟")) return; const j = await botApi({ action: "token", botId: id }); say(`🔑 التوكن الجديد (بيظهر مرة واحدة بس):<br><code class="bf-code" dir="ltr">${esc(j.token)}</code>${btn("copy", "📋 نسخ", j.token)}`); }
+      else if (a === "copy") { try { await navigator.clipboard.writeText(id); toast("اتنسخ"); } catch { toast("انسخه يدويًا"); } }
+      else if (a === "toggle") { const s = await getDoc(doc(db, "bots", id)); await botApi({ action: s.data().active ? "disable" : "enable", botId: id }); say("تم."); await botMenu(id); }
+      else if (a === "joinG" || a === "priv") {
+        const s = await getDoc(doc(db, "bots", id)), st = s.data().settings || {};
+        const next = { inline: st.inline === true, inlineGeo: st.inlineGeo === true, joinGroups: st.joinGroups !== false, privacy: st.privacy !== false };
+        if (a === "joinG") next.joinGroups = !next.joinGroups; else next.privacy = !next.privacy;
+        await botApi({ action: "setsettings", botId: id, ...next }); say("تم."); await botMenu(id);
+      }
+      else if (a === "del") { if (!confirm("حذف البوت نهائيًا؟ التوكن هيتبطّل.")) return; await botApi({ action: "deletebot", botId: id }); say("🗑 اتحذف البوت."); }
+      else if (a === "rename") { BF.state = { t: "rename", id }; say("اكتب الاسم الجديد:"); }
+      else if (a === "desc") { BF.state = { t: "desc", id }; say("اكتب الوصف (عربي):"); }
+      else if (a === "about") { BF.state = { t: "about", id }; say("اكتب النبذة (عربي):"); }
+      else if (a === "cmds") { BF.state = { t: "cmds", id }; say(`ابعت الأوامر سطر لكل أمر بالشكل:<br><bdi dir="ltr">start - ابدأ</bdi><br><bdi dir="ltr">help - المساعدة</bdi>`); }
+    } catch (e) { err(e); } finally { BF.busy = false; }
+  };
+  const submit = async () => {
+    const t = inp.value.trim(); if (!t || BF.busy) return; inp.value = "";
+    const cmd = t.toLowerCase();
+    if (cmd === "/start" || cmd === "/help") return act("help");
+    if (cmd === "/newbot") return act("newbot");
+    if (cmd === "/mybots") return act("mybots");
+    if (cmd === "/cancel") return act("cancel");
+    const s = BF.state; if (!s) { me(t); say("مفهمتش. جرّب /help"); return; }
+    me(t); BF.busy = true;
+    try {
+      if (s.t === "newbot") {
+        if (t.length < 2) { say("الاسم قصير، اكتب حرفين على الأقل."); return; }
+        const j = await botApi({ action: "create", name: t, nameAr: t, nameEn: t }); BF.state = null;
+        say(`✅ اتعمل البوت <b>${esc(j.bot.name)}</b><br>🔑 التوكن (بيظهر مرة واحدة بس، احفظه):<br><code class="bf-code" dir="ltr">${esc(j.token)}</code>${btn("copy", "📋 نسخ", j.token)}<br><small>استخدمه في هيدر X-ES-Bot-Token مع /api/bot.</small>${btn("bot", "⚙️ إدارة البوت", j.bot.id)}`);
+      } else if (s.t === "rename") { await botApi({ action: "setname", botId: s.id, name: t, nameAr: t, nameEn: t }); BF.state = null; say("تم تغيير الاسم."); }
+      else if (s.t === "desc") { await botApi({ action: "setdescription", botId: s.id, ar: t, en: t }); BF.state = null; say("تم حفظ الوصف."); }
+      else if (s.t === "about") { await botApi({ action: "setabouttext", botId: s.id, ar: t, en: t }); BF.state = null; say("تم حفظ النبذة."); }
+      else if (s.t === "cmds") {
+        const commands = t.split(/\n|\r/).map(l => l.trim()).filter(Boolean).map(l => { const m = l.match(/^\/?([A-Za-z0-9_]+)\s*[-–—:]\s*(.+)$/); return m ? { command: m[1], ar: m[2], en: m[2] } : null; }).filter(Boolean);
+        if (!commands.length) { say("الصيغة غلط. مثال: start - ابدأ"); return; }
+        const j = await botApi({ action: "setcommands", botId: s.id, commands }); BF.state = null; say(`تم حفظ ${j.count} أمر.`);
+      }
+    } catch (e) { err(e); } finally { BF.busy = false; }
+  };
+  sh.querySelector("#bfBack").onclick = closeModal;
+  sh.querySelector("#bfSend").onclick = submit;
+  inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
+  const onclk = e => { const b = e.target.closest("[data-a]"); if (b) act(b.dataset.a, b.dataset.id); };
+  log.onclick = onclk; quick.onclick = onclk;
+}
+
 /* ---------------- الإعدادات (تاب بشكل تيليجرام) ---------------- */
 const SPI = {
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
@@ -1118,6 +1232,7 @@ function renderListNow() {
     return (toDate(b.lastAt || b.createdAt)?.getTime() || 0) - (toDate(a.lastAt || a.createdAt)?.getTime() || 0);
   });
   h += `<div class="section">${f === "arch" ? "المؤرشفة" : "محادثاتك"}</div>`;
+  if (f === "all" && !nm && !term) h += `<div class="chat-item bf-row" data-bf="1"><div class="av-wrap"><div class="avatar bf-avatar">🤖</div></div><div class="chat-meta"><div class="row1"><div class="name">ES BotFather${botfatherBadge(15)}</div></div><div class="row2"><div class="preview">أنشئ وأدر بوتاتك</div></div></div></div>`;
   h += chats.length ? chats.map(c => {
     if (c._t !== "dm") return groupRow(c, um, P, PIN, MUTE);
     const pid = peerOf(c), u = S.users.get(pid) || { name: "مستخدم" }, n = um[c.id] || 0, muted = P.mute.includes(c.id);
@@ -1139,6 +1254,7 @@ $("#list").addEventListener("pointerdown", e => {
 $("#list").addEventListener("pointermove", e => { if (Math.abs(e.clientX - lpX) + Math.abs(e.clientY - lpY) > 10) clearTimeout(lpT); });
 ["pointerup", "pointerleave", "pointercancel"].forEach(ev => $("#list").addEventListener(ev, () => clearTimeout(lpT)));
 $("#list").addEventListener("contextmenu", e => { const it = e.target.closest("[data-chat]"); if (it) { e.preventDefault(); clearTimeout(lpT); lpFired = true; openAnyMenu(it.dataset.open); } });
+$("#list").addEventListener("click", e => { if (e.target.closest("[data-bf]")) { e.stopPropagation(); openBotFather(); } }, true);
 $("#list").addEventListener("click", e => {
   if (lpFired) { lpFired = false; return; }
   const chb = e.target.closest("[data-ch]"); if (chb) return chb.dataset.ch === "new" ? openCreate("channel") : openDiscover();
@@ -1207,6 +1323,7 @@ async function loadOlder() {
   finally { c.loadingOld = false; const b2 = $("#olderBtn"); if (b2) b2.textContent = "تحميل رسايل أقدم"; }
 }
 function openChat(peer) {
+  if (peer && S.bfUid && peer === S.bfUid && S.user && peer !== S.user.uid) { openBotFather(); return; }
   closeChatSubs(); clearTimeout(S.typT);
   const id = peer ? dmId(peer) : "public";
   S.chat = { id, type: peer ? "dm" : "public", peer: peer || null, first: true, lastTyping: undefined, typingAt: 0, sentTyping: 0, sentRead: 0, reply: null, doc: null, sig: "", cleaned: new Set() };
