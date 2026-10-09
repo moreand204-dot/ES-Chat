@@ -633,3 +633,18 @@ button>.ico{margin:auto}
 .pv-name{text-align:center;font-weight:700;margin:2px 0 10px}
 .bf-av,.bf-avatar{overflow:hidden}.bf-av img,.bf-avatar img{width:100%;height:100%;object-fit:cover}
 .avatar img{cursor:zoom-in}
+
+/* ---- كل صفحة (بروفايل/إعدادات/معلومات/إحصائيات/مكالمة) بتفتح صفحة كاملة زي الشات ---- */
+.modal:has(.sheet.page),.modal:has(.sheet.owner-sheet){padding:0;place-items:stretch;background:var(--ink)}
+.sheet.page{width:100%;max-width:none;height:100dvh;max-height:100dvh;border-radius:0;border:0;box-shadow:none;background:var(--ink);
+  padding:calc(env(safe-area-inset-top,0px) + 60px) max(16px,calc((100% - 640px)/2)) calc(env(safe-area-inset-bottom,0px) + 28px);
+  overflow-x:hidden;overflow-y:auto;box-sizing:border-box;animation:pageIn .2s ease-out}
+@keyframes pageIn{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:none}}
+.sheet.page .x{position:fixed;top:calc(env(safe-area-inset-top,0px) + 12px);inset-inline-start:14px;z-index:9;background:var(--panel)}
+.sheet.page.sp-sheet{padding-top:calc(env(safe-area-inset-top,0px) + 8px)}
+.sheet.page.sp-sheet .sp-sub-h{position:sticky;top:0;z-index:5;background:var(--ink);margin:0 0 12px;padding:6px 0}
+.sheet.page .menu-h{position:static}
+.sheet.page .call-local{position:fixed;top:calc(env(safe-area-inset-top,0px) + 120px);inset-inline-end:18px;z-index:3}
+.sheet.page .call-remote{max-height:62dvh}
+.sheet.page .call-actions{position:fixed;inset-inline:0;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);display:flex;gap:10px;justify-content:center;padding:0 16px}
+.sheet.owner-sheet{height:100dvh;max-height:100dvh;border-radius:0;width:100%}

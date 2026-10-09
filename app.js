@@ -15,14 +15,68 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const S = { user: null, me: null, e2ee: { ready: false, error: "" }, users: new Map(), chats: [], chat: null, found: null, site: {}, groups: [], gseen: new Map(), seen: new Map(), unsub: {}, view: "boot", filter: "all", prefs: { pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] } };
 let CALL = null, callSeen = new Set();
-const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+const rtcConfig = { iceServers: [
+  { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] },
+  { urls: ["turn:openrelay.metered.ca:80", "turn:openrelay.metered.ca:443", "turn:openrelay.metered.ca:443?transport=tcp"], username: "openrelayproject", credential: "openrelayproject" },
+  ...(Array.isArray(CFG.ICE_SERVERS) ? CFG.ICE_SERVERS : [])
+] };
 function stopCallUI() { if (!CALL) return; CALL.stream?.getTracks().forEach(t => t.stop()); CALL.pc?.close(); CALL.unsub?.forEach(f => f && f()); CALL = null; closeModal(); }
 async function finishCall(state = "ended") { const c = CALL; if (!c) return; try { await updateDoc(doc(db, "calls", c.id), { state, endedAt: serverTimestamp() }); } catch {} stopCallUI(); }
 function callView(kind, name) { const sh = openModal(`<div class="call-screen"><div class="menu-h">${kind === "video" ? "مكالمة فيديو" : "مكالمة صوتية"}</div><div class="call-peer">${esc(name || "مستخدم")}</div><video id="callRemote" class="call-remote" autoplay playsinline></video><video id="callLocal" class="call-local ${kind === "video" ? "" : "hidden"}" autoplay muted playsinline></video><div class="call-status" id="callStatus">جاري الاتصال...</div><div class="call-actions"><button class="btn-ghost" id="callMute">كتم الميكروفون</button><button class="btn-ghost" id="callCam" ${kind === "video" ? "" : "disabled"}>الكاميرا</button><button class="btn-danger" id="callEnd">إنهاء</button></div></div>`); sh.querySelector("#callEnd").onclick = () => finishCall(); sh.querySelector("#callMute").onclick = () => { const t = CALL?.stream?.getAudioTracks()[0]; if (t) { t.enabled = !t.enabled; sh.querySelector("#callMute").textContent = t.enabled ? "كتم الميكروفون" : "تشغيل الميكروفون"; } }; const cam = sh.querySelector("#callCam"); cam.onclick = () => { const t = CALL?.stream?.getVideoTracks()[0]; if (t) { t.enabled = !t.enabled; cam.textContent = t.enabled ? "إيقاف الكاميرا" : "تشغيل الكاميرا"; } }; return sh; }
-function wirePeer(pc, ref, remote, stream) { pc.ontrack = e => { remote.srcObject = e.streams[0]; }; pc.onicecandidate = e => { if (e.candidate) addDoc(collection(db, "calls", ref.id, "candidates"), { from: S.user.uid, candidate: e.candidate.toJSON() }).catch(() => {}); }; pc.onconnectionstatechange = () => { const st = document.querySelector("#callStatus"); if (st) st.textContent = pc.connectionState === "connected" ? "متصل" : pc.connectionState === "failed" ? "فشل الاتصال" : pc.connectionState; if (pc.connectionState === "failed") finishCall(); }; stream.getTracks().forEach(t => pc.addTrack(t, stream)); }
-function watchCandidates(ref, pc, own) { const seen = new Set(); return onSnapshot(collection(db, "calls", ref.id, "candidates"), snap => snap.docChanges().forEach(ch => { const d = ch.doc.data(); if (ch.type === "added" && d.from !== own && !seen.has(ch.doc.id)) { seen.add(ch.doc.id); pc.addIceCandidate(new RTCIceCandidate(d.candidate)).catch(() => {}); } })); }
-async function startCall(kind) { if (!S.chat?.peer || CALL) return; const peer = S.chat.peer, u = S.users.get(peer) || {}; try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: kind === "video" }); const pc = new RTCPeerConnection(rtcConfig); const offer = await pc.createOffer(); await pc.setLocalDescription(offer); const ref = await addDoc(collection(db, "calls"), { caller: S.user.uid, callee: peer, kind, offer: pc.localDescription.toJSON(), state: "ringing", createdAt: serverTimestamp(), expiresAt: new Date(Date.now() + 120000) }); const sh = callView(kind, u.name); const remote = sh.querySelector("#callRemote"), local = sh.querySelector("#callLocal"); local.srcObject = stream; CALL = { id: ref.id, role: "caller", pc, stream, unsub: [], kind }; wirePeer(pc, ref, remote, stream); CALL.unsub.push(watchCandidates(ref, pc, S.user.uid)); CALL.unsub.push(onSnapshot(ref, async s => { const d = s.data(); if (!d || d.state === "ended" || d.state === "rejected") return stopCallUI(); if (d.answer && !pc.currentRemoteDescription) await pc.setRemoteDescription(new RTCSessionDescription(d.answer)); })); } catch (e) { console.error(e); toast(e.name === "NotAllowedError" ? "اسمح للميكروفون والكاميرا من إعدادات المتصفح" : "تعذّر بدء المكالمة"); } }
-async function acceptCall(id, data) { if (CALL) return; const u = S.users.get(data.caller) || {}; try { const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: data.kind === "video" }); const pc = new RTCPeerConnection(rtcConfig), ref = doc(db, "calls", id); await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); const sh = callView(data.kind, u.name); const remote = sh.querySelector("#callRemote"), local = sh.querySelector("#callLocal"); local.srcObject = stream; CALL = { id, role: "callee", pc, stream, unsub: [], kind: data.kind }; wirePeer(pc, ref, remote, stream); CALL.unsub.push(watchCandidates(ref, pc, S.user.uid)); CALL.unsub.push(onSnapshot(ref, s => { if (["ended", "rejected"].includes(s.data()?.state)) stopCallUI(); })); await updateDoc(ref, { answer: pc.localDescription.toJSON(), state: "active" }); } catch (e) { console.error(e); toast("تعذّر قبول المكالمة"); } }
+function wirePeer(pc, ref, remote, stream) {
+  pc.ontrack = e => { remote.srcObject = e.streams && e.streams[0] ? e.streams[0] : new MediaStream([e.track]); remote.play && remote.play().catch(() => {}); };
+  pc.onicecandidate = e => { if (!e.candidate || !CALL) return; const c = { from: S.user.uid, candidate: e.candidate.toJSON() }; if (CALL.ready) addDoc(collection(db, "calls", ref.id, "candidates"), c).catch(() => {}); else CALL.out.push(c); };
+  pc.onconnectionstatechange = () => { const st = document.querySelector("#callStatus"); const m = { connected: "متصل", connecting: "جاري الاتصال...", new: "جاري الاتصال...", disconnected: "الاتصال ضعيف...", failed: "فشل الاتصال", closed: "انتهت" }; if (st) st.textContent = m[pc.connectionState] || pc.connectionState; if (pc.connectionState === "failed") { toast("فشل الاتصال (ممكن الشبكة محتاجة سيرفر TURN)"); finishCall(); } };
+  stream.getTracks().forEach(t => pc.addTrack(t, stream));
+}
+async function flushCandidates() { if (!CALL) return; const q = CALL.q.splice(0); for (const c of q) await CALL.pc.addIceCandidate(c).catch(() => {}); }
+function watchCandidates(ref, pc, own) {
+  const seen = new Set();
+  return onSnapshot(collection(db, "calls", ref.id, "candidates"), snap => snap.docChanges().forEach(ch => {
+    const d = ch.doc.data(); if (ch.type !== "added" || d.from === own || seen.has(ch.doc.id)) return; seen.add(ch.doc.id);
+    let c; try { c = new RTCIceCandidate(d.candidate); } catch { return; }
+    if (pc.remoteDescription) pc.addIceCandidate(c).catch(() => {}); else if (CALL) CALL.q.push(c);
+  }));
+}
+async function startCall(kind) {
+  if (!S.chat?.peer || CALL) return;
+  const peer = S.chat.peer, u = S.users.get(peer) || {}; let stream = null;
+  try {
+    if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) return toast("المتصفح مش بيدعم المكالمات");
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: kind === "video" ? { facingMode: "user" } : false });
+    const pc = new RTCPeerConnection(rtcConfig), ref = doc(collection(db, "calls"));
+    const sh = callView(kind, u.name); const remote = sh.querySelector("#callRemote"), local = sh.querySelector("#callLocal"); local.srcObject = stream;
+    CALL = { id: ref.id, role: "caller", pc, stream, unsub: [], kind, ready: false, out: [], q: [] };
+    wirePeer(pc, ref, remote, stream);               // الأول نضيف المسارات، وبعدها نعمل الـ offer (كان بالعكس وده سبب إن الصوت/الفيديو مش بيشتغلوا)
+    await pc.setLocalDescription(await pc.createOffer());
+    await setDoc(ref, { caller: S.user.uid, callee: peer, kind, offer: pc.localDescription.toJSON(), state: "ringing", createdAt: serverTimestamp(), expiresAt: new Date(Date.now() + 120000) });
+    CALL.ready = true; for (const c of CALL.out.splice(0)) addDoc(collection(db, "calls", ref.id, "candidates"), c).catch(() => {});
+    CALL.unsub.push(watchCandidates(ref, pc, S.user.uid));
+    CALL.unsub.push(onSnapshot(ref, async s => { const d = s.data(); if (!d || d.state === "ended" || d.state === "rejected") { if (d && d.state === "rejected") toast("اترفضت المكالمة"); return stopCallUI(); } if (d.answer && !pc.currentRemoteDescription) { await pc.setRemoteDescription(new RTCSessionDescription(d.answer)).catch(console.error); flushCandidates(); } }));
+    setTimeout(() => { if (CALL && CALL.id === ref.id && CALL.pc.connectionState !== "connected" && CALL.pc.connectionState !== "connecting") { toast("محدش رد"); finishCall("ended"); } }, 60000);
+  } catch (e) {
+    console.error(e); if (CALL) stopCallUI(); else stream && stream.getTracks().forEach(t => t.stop());
+    toast(e.name === "NotAllowedError" ? "اسمح للميكروفون والكاميرا من إعدادات المتصفح" : e.name === "NotFoundError" ? "مفيش ميكروفون/كاميرا متاحة" : "تعذّر بدء المكالمة");
+  }
+}
+async function acceptCall(id, data) {
+  if (CALL) return; const u = S.users.get(data.caller) || {}; let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: data.kind === "video" ? { facingMode: "user" } : false });
+    const pc = new RTCPeerConnection(rtcConfig), ref = doc(db, "calls", id);
+    const sh = callView(data.kind, u.name); const remote = sh.querySelector("#callRemote"), local = sh.querySelector("#callLocal"); local.srcObject = stream;
+    CALL = { id, role: "callee", pc, stream, unsub: [], kind: data.kind, ready: true, out: [], q: [] };
+    wirePeer(pc, ref, remote, stream);               // المسارات قبل الـ answer
+    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    await pc.setLocalDescription(await pc.createAnswer());
+    CALL.unsub.push(watchCandidates(ref, pc, S.user.uid)); flushCandidates();
+    CALL.unsub.push(onSnapshot(ref, s => { if (["ended", "rejected"].includes(s.data()?.state)) stopCallUI(); }));
+    await updateDoc(ref, { answer: pc.localDescription.toJSON(), state: "active" });
+  } catch (e) {
+    console.error(e); if (CALL) stopCallUI(); else stream && stream.getTracks().forEach(t => t.stop());
+    toast(e.name === "NotAllowedError" ? "اسمح للميكروفون والكاميرا من إعدادات المتصفح" : "تعذّر قبول المكالمة");
+  }
+}
 function showIncomingCall(id, data) { if (callSeen.has(id) || CALL) return; callSeen.add(id); ensureUsers([data.caller]).then(() => { const u = S.users.get(data.caller) || {}; const sh = openModal(`<div class="menu"><div class="menu-h">مكالمة واردة</div><p class="sub">${esc(u.name || "مستخدم")} يريد بدء مكالمة ${data.kind === "video" ? "فيديو" : "صوتية"}.</p><div class="actions"><button class="btn-primary" id="acceptCall">قبول</button><button class="btn-danger" id="rejectCall">رفض</button></div></div>`); sh.querySelector("#acceptCall").onclick = () => { closeModal(); acceptCall(id, data); }; sh.querySelector("#rejectCall").onclick = async () => { await updateDoc(doc(db, "calls", id), { state: "rejected", endedAt: serverTimestamp() }).catch(() => {}); closeModal(); }; }); }
 function watchIncomingCalls() { if (S.unsub.incomingCalls) S.unsub.incomingCalls(); S.unsub.incomingCalls = onSnapshot(query(collection(db, "calls"), where("callee", "==", S.user.uid), limit(8)), snap => snap.docs.forEach(d => { const x = d.data(); if (x.state === "ringing" && (!x.expiresAt || toDate(x.expiresAt) > new Date())) showIncomingCall(d.id, x); }), () => {}); }
 const DEFAULT_PREFS = () => ({ pins: [], arch: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] });
@@ -227,15 +281,17 @@ addEventListener("popstate", () => {
   if (ignorePop > 0) { ignorePop--; if (!ignorePop) deferred.splice(0).forEach(f => f()); return; }
   const l = LAYERS.pop(); if (l) l.close();
 });
-function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "att-sheet", "emo-sheet", "owner-sheet"); clearInterval(_ownTimer); }
+function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "page", "att-sheet", "emo-sheet", "owner-sheet", "sp-sheet", "bf-sheet", "tgp-sheet"); clearInterval(_ownTimer); }
 function closeModal() {
   const was = !$("#modal").classList.contains("hidden"); modalDom();
   if (was) setTimeout(() => { if ($("#modal").classList.contains("hidden")) layerClose("modal"); }, 0);
 }
 function openModal(html, wide = false) {
   const sh = $("#sheet");
-  sh.classList.toggle("wide", wide); sh.classList.remove("bf-sheet");
-  sh.innerHTML = `<button class="x" id="xBtn" aria-label="إغلاق">${ic("close", 18)}</button>` + html;
+  const page = /class="(prof|call-screen)"|sp-sub-h|stats-tabs/.test(html);
+  sh.className = "sheet" + (wide ? " wide" : "") + (page ? " page" : "");
+  sh.scrollTop = 0;
+  sh.innerHTML = `<button class="x" id="xBtn" aria-label="رجوع">${page ? `<svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ic("close", 18)}</button>` + html;
   $("#modal").classList.remove("hidden"); layerOpen("modal", modalDom);
   $("#xBtn").onclick = closeModal;
   return sh;
