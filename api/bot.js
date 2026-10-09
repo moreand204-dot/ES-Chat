@@ -1,5 +1,15 @@
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+// تحديد معدّل الطلبات: من غير ده، بوت بتوكن مسروق (أو يوزر عادي) يقدر يفتح create لا نهائي
+// أو يقصف sendMessage بلا أي حد، على عكس /api/notify اللي عنده نفس الحماية دي أصلاً.
+const rate = new Map();
+function limited(key, max, windowMs = 10000) {
+  const now = Date.now(), prev = rate.get(key) || [], recent = prev.filter(t => now - t < windowMs);
+  if (recent.length >= max) return true;
+  recent.push(now); rate.set(key, recent);
+  if (rate.size > 10000) { for (const [k, ts] of rate) if (!ts.length || now - ts[ts.length - 1] > 60000) rate.delete(k); while (rate.size > 10000) rate.delete(rate.keys().next().value); }
+  return false;
+}
 function init() {
   if (admin.apps.length) return;
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) throw Object.assign(new Error("FIREBASE_SERVICE_ACCOUNT is not set"), { code: "env-missing" });
@@ -41,6 +51,7 @@ module.exports = async (req, res) => {
     const action = text(body.action, 40);
     if (action === "create") {
       const u = await userFrom(req); if (!u) return send(res, 401, { error: "user auth required" });
+      if (limited("create:" + u.uid, 5, 60000)) return send(res, 429, { error: "rate" });
       const name = text(body.name, 40); if (name.length < 2) return send(res, 400, { error: "name required" });
       const bid = id(), raw = makeToken(bid), h = hash(raw), botUid = `bot_${bid}`, now = admin.firestore.FieldValue.serverTimestamp();
       await db.doc(`bots/${bid}`).set({ owner: u.uid, name, nameAr: text(body.nameAr || name, 40), nameEn: text(body.nameEn || name, 40), botUid, active: true, tokenHash: h, tokenPrefix: raw.slice(0, 18), createdAt: now, groups: [], commands: [], settings: { inline: false, inlineGeo: false, joinGroups: true, privacy: true } });
@@ -50,6 +61,7 @@ module.exports = async (req, res) => {
     }
     if (["disable", "enable", "setname", "setdescription", "setabouttext", "setcommands", "setsettings", "setinline", "setinlinegeo", "setjoingroups", "setprivacy", "deletebot", "token"].includes(action)) {
       const u = await userFrom(req); if (!u) return send(res, 401, { error: "user auth required" });
+      if (limited("manage:" + u.uid, 20, 10000)) return send(res, 429, { error: "rate" });
       const bid = text(body.botId, 80), ref = db.doc(`bots/${bid}`), snap = await ref.get(); if (!snap.exists || snap.data().owner !== u.uid) return send(res, 404, { error: "bot not found" });
       const b = { id: snap.id, ...snap.data() };
       if (action === "token") return send(res, 200, { token: await rotate(db, b), warning: "احفظ الرمز الآن؛ لن يظهر مرة أخرى." });
@@ -64,6 +76,7 @@ module.exports = async (req, res) => {
       await ref.update({ settings: next }); return send(res, 200, { ok: true, settings: next });
     }
     const bot = await botFrom(db, req); if (!bot) return send(res, 401, { error: "invalid bot token" });
+    if (limited("bot:" + bot.id, 20, 10000)) return send(res, 429, { error: "rate" });
     if (action === "addToGroup") {
       if (bot.settings?.joinGroups === false) return send(res, 403, { error: "bot cannot join groups" });
       const gid = text(body.groupId, 120), g = await db.doc(`groups/${gid}`).get(); if (!g.exists) return send(res, 404, { error: "group not found" }); const gd = g.data();
