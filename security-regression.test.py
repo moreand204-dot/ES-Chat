@@ -5,7 +5,9 @@ root = Path(__file__).parent
 rules = (root/'firestore.rules').read_text()
 app = (root/'app.js').read_text()
 notify = (root/'api/notify.js').read_text()
+bot = (root/'api/bot.js').read_text()
 e2ee = (root/'e2ee.js').read_text()
+vercel = (root/'vercel.json').read_text()
 checks = []
 def ok(name, cond):
     checks.append((name, bool(cond)))
@@ -62,6 +64,19 @@ ok('legacy decrypt remains isolated', 'decryptLegacyPrivatePayload' in e2ee)
 # Front-end injection guard: all user-facing name interpolation sites in key renderers use esc.
 ok('verified badge has explicit internal-site label', 'حساب موثّق داخل ES Chat' in app)
 ok('large emoji reaction catalog present', 'const EMO = [' in app and app.count('"') > 50)
+
+# v23 — هجوم فعلي + إصلاحات 2026-10-09: كراش التشفير على حمولات كبيرة، وعدم وجود rate limit في api/bot.js، ومفيش security headers.
+ok('b64 no longer spreads raw bytes into String.fromCharCode (stack-overflow DoS on large ciphertexts)',
+   'String.fromCharCode(...new Uint8Array(a))' not in e2ee
+   and 'String.fromCharCode(...bytes.subarray(' in e2ee)
+ok('bot API create is rate limited per user', 'limited("create:" + u.uid' in bot)
+ok('bot API manage actions are rate limited per user', 'limited("manage:" + u.uid' in bot)
+ok('bot API token-authenticated actions are rate limited per bot', 'limited("bot:" + bot.id' in bot)
+ok('bot API rate map has a cleanup cap (no unbounded memory growth)', 'rate.size > 10000' in bot)
+ok('vercel.json sets a restrictive Content-Security-Policy', '"Content-Security-Policy"' in vercel and "frame-ancestors 'none'" in vercel)
+ok('vercel.json blocks framing (clickjacking) via X-Frame-Options', '"X-Frame-Options", "value": "DENY"' in vercel)
+ok('vercel.json sets Referrer-Policy', '"Referrer-Policy"' in vercel)
+ok('vercel.json keeps Google Sign-In popup working (COOP same-origin-allow-popups, not same-origin)', 'same-origin-allow-popups' in vercel)
 
 failed = [n for n, passed in checks if not passed]
 for n, passed in checks: print(('PASS' if passed else 'FAIL') + ' - ' + n)
