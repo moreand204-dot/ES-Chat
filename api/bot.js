@@ -1,15 +1,5 @@
 const admin = require("firebase-admin");
 const crypto = require("crypto");
-// تحديد معدّل الطلبات: من غير ده، بوت بتوكن مسروق (أو يوزر عادي) يقدر يفتح create لا نهائي
-// أو يقصف sendMessage بلا أي حد، على عكس /api/notify اللي عنده نفس الحماية دي أصلاً.
-const rate = new Map();
-function limited(key, max, windowMs = 10000) {
-  const now = Date.now(), prev = rate.get(key) || [], recent = prev.filter(t => now - t < windowMs);
-  if (recent.length >= max) return true;
-  recent.push(now); rate.set(key, recent);
-  if (rate.size > 10000) { for (const [k, ts] of rate) if (!ts.length || now - ts[ts.length - 1] > 60000) rate.delete(k); while (rate.size > 10000) rate.delete(rate.keys().next().value); }
-  return false;
-}
 function init() {
   if (admin.apps.length) return;
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) throw Object.assign(new Error("FIREBASE_SERVICE_ACCOUNT is not set"), { code: "env-missing" });
@@ -28,9 +18,10 @@ async function botFrom(db, req) {
   const b = await db.doc(`bots/${sec.data().botId}`).get(); if (!b.exists || b.data().active !== true || b.data().tokenHash !== hash(raw)) return null;
   return { id: b.id, ...b.data() };
 }
+function validWebhook(value) { try { const u = new URL(String(value || "")); return u.protocol === "https:" && !/^(localhost|127\.|0\.0\.0\.0|::1)$/i.test(u.hostname) && !/^10\.|^192\.168\.|^172\.(1[6-9]|2\d|3[0-1])\./.test(u.hostname); } catch { return false; } }
 function safeButtons(value) {
   if (!Array.isArray(value)) return [];
-  return value.slice(0, 8).map(x => ({ ar: text(x.ar || x.textAr || x.text, 40), en: text(x.en || x.textEn || x.text, 40), url: String(x.url || "").trim().slice(0, 500) })).filter(x => (x.ar || x.en) && /^https:\/\//i.test(x.url));
+  return value.slice(0, 8).map(x => ({ ar: text(x.ar || x.textAr || x.text, 40), en: text(x.en || x.textEn || x.text, 40), ...(validWebhook(x.url) ? { url: String(x.url).trim().slice(0, 500) } : {}), ...(x.callback ? { callback: text(x.callback, 128) } : {}) })).filter(x => (x.ar || x.en) && (x.url || x.callback));
 }
 function safeCommands(value) {
   if (!Array.isArray(value)) return [];
@@ -51,7 +42,6 @@ module.exports = async (req, res) => {
     const action = text(body.action, 40);
     if (action === "create") {
       const u = await userFrom(req); if (!u) return send(res, 401, { error: "user auth required" });
-      if (limited("create:" + u.uid, 5, 60000)) return send(res, 429, { error: "rate" });
       const name = text(body.name, 40); if (name.length < 2) return send(res, 400, { error: "name required" });
       const bid = id(), raw = makeToken(bid), h = hash(raw), botUid = `bot_${bid}`, now = admin.firestore.FieldValue.serverTimestamp();
       await db.doc(`bots/${bid}`).set({ owner: u.uid, name, nameAr: text(body.nameAr || name, 40), nameEn: text(body.nameEn || name, 40), botUid, active: true, tokenHash: h, tokenPrefix: raw.slice(0, 18), createdAt: now, groups: [], commands: [], settings: { inline: false, inlineGeo: false, joinGroups: true, privacy: true } });
@@ -59,9 +49,8 @@ module.exports = async (req, res) => {
       await db.doc(`users/${botUid}/public/profile`).set({ uid: botUid, name, photo: "", gender: "male", bio: "بوت ES Chat Pro / ES Chat Pro Bot", username: bid, verified: false }, { merge: true });
       return send(res, 201, { bot: { id: bid, uid: botUid, name, active: true }, token: raw, warning: "احفظ الرمز الآن؛ لن يظهر مرة أخرى. / Save this token; it will not be shown again." });
     }
-    if (["disable", "enable", "setname", "setdescription", "setabouttext", "setcommands", "setsettings", "setinline", "setinlinegeo", "setjoingroups", "setprivacy", "deletebot", "token"].includes(action)) {
+    if (["disable", "enable", "setname", "setdescription", "setabouttext", "setcommands", "setsettings", "setinline", "setinlinegeo", "setjoingroups", "setprivacy", "deletebot", "token", "setwebhook", "deletewebhook"].includes(action)) {
       const u = await userFrom(req); if (!u) return send(res, 401, { error: "user auth required" });
-      if (limited("manage:" + u.uid, 20, 10000)) return send(res, 429, { error: "rate" });
       const bid = text(body.botId, 80), ref = db.doc(`bots/${bid}`), snap = await ref.get(); if (!snap.exists || snap.data().owner !== u.uid) return send(res, 404, { error: "bot not found" });
       const b = { id: snap.id, ...snap.data() };
       if (action === "token") return send(res, 200, { token: await rotate(db, b), warning: "احفظ الرمز الآن؛ لن يظهر مرة أخرى." });
@@ -71,12 +60,13 @@ module.exports = async (req, res) => {
       if (action === "setdescription") { await ref.update({ descriptionAr: text(body.ar || body.descriptionAr, 512), descriptionEn: text(body.en || body.descriptionEn, 512) }); return send(res, 200, { ok: true }); }
       if (action === "setabouttext") { await ref.update({ aboutAr: text(body.ar || body.aboutAr, 256), aboutEn: text(body.en || body.aboutEn, 256) }); return send(res, 200, { ok: true }); }
       if (action === "setcommands") { await ref.update({ commands: safeCommands(body.commands) }); return send(res, 200, { ok: true, count: safeCommands(body.commands).length }); }
+      if (action === "setwebhook") { const url = String(body.url || "").trim(); if (!validWebhook(url)) return send(res, 400, { error: "https webhook required" }); const secret = crypto.randomBytes(24).toString("base64url"); await ref.update({ webhookUrl: url }); await db.doc(`botSecrets/${b.tokenHash}`).set({ botId: b.id, owner: b.owner, active: b.active === true, webhookSecret: secret }, { merge: true }); return send(res, 200, { ok: true, url, secret, warning: "احفظ secret الآن؛ لن يظهر مرة أخرى." }); }
+      if (action === "deletewebhook") { await ref.update({ webhookUrl: "" }); if (b.tokenHash) await db.doc(`botSecrets/${b.tokenHash}`).set({ webhookSecret: "" }, { merge: true }); return send(res, 200, { ok: true }); }
       const oldSettings = b.settings || {}, next = { inline: action === "setinline" ? body.enabled === true : action === "setinlinegeo" ? oldSettings.inlineGeo : oldSettings.inline, inlineGeo: action === "setinlinegeo" ? body.enabled === true : oldSettings.inlineGeo, joinGroups: action === "setjoingroups" ? body.enabled !== false : oldSettings.joinGroups !== false, privacy: action === "setprivacy" ? body.enabled !== false : oldSettings.privacy !== false };
       if (action === "setsettings") Object.assign(next, { inline: body.inline === true, inlineGeo: body.inlineGeo === true, joinGroups: body.joinGroups !== false, privacy: body.privacy !== false });
       await ref.update({ settings: next }); return send(res, 200, { ok: true, settings: next });
     }
     const bot = await botFrom(db, req); if (!bot) return send(res, 401, { error: "invalid bot token" });
-    if (limited("bot:" + bot.id, 20, 10000)) return send(res, 429, { error: "rate" });
     if (action === "addToGroup") {
       if (bot.settings?.joinGroups === false) return send(res, 403, { error: "bot cannot join groups" });
       const gid = text(body.groupId, 120), g = await db.doc(`groups/${gid}`).get(); if (!g.exists) return send(res, 404, { error: "group not found" }); const gd = g.data();
