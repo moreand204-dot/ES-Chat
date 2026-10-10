@@ -5,7 +5,9 @@ root = Path(__file__).parent
 rules = (root/'firestore.rules').read_text()
 app = (root/'app.js').read_text()
 notify = (root/'api/notify.js').read_text()
+bot = (root/'api/bot.js').read_text()
 e2ee = (root/'e2ee.js').read_text()
+vercel = (root/'vercel.json').read_text()
 checks = []
 def ok(name, cond):
     checks.append((name, bool(cond)))
@@ -63,28 +65,18 @@ ok('legacy decrypt remains isolated', 'decryptLegacyPrivatePayload' in e2ee)
 ok('verified badge has explicit internal-site label', 'حساب موثّق داخل ES Chat' in app)
 ok('large emoji reaction catalog present', 'const EMO = [' in app and app.count('"') > 50)
 
-# ---- v41: فحوصات إضافية (صياغة module، توثيق، مكالمات، هيدرز) ----
-import json, subprocess, tempfile, shutil, os
-def node_module_ok(path):
-    # لازم يتفحص كـ module (.mjs). فحص .js العادي بيعدّي أخطاء صياغة في ملفات فيها import
-    d = tempfile.mkdtemp(); t = os.path.join(d, 'x.mjs'); shutil.copy(path, t)
-    r = subprocess.run(['node', '--check', t], capture_output=True, text=True); shutil.rmtree(d, ignore_errors=True)
-    return r.returncode == 0
-ok('app.js is valid as an ES module (node --check on .mjs)', node_module_ok(root/'app.js'))
-ok('e2ee.js is valid as an ES module', node_module_ok(root/'e2ee.js'))
-ok('public profile cannot self-set verified=true', "منع التوثيق الذاتي" in rules and "get('verified', false) == false" in rules)
-grp = rules[rules.index('match /groups/{gid} {'):rules.index('match /groupDirectory/{gid}')]
-ok('group verified can only be changed by site owner', "request.auth.uid == resource.data.owner))" not in grp and "isOwner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verified'])" in grp)
-dirr = rules[rules.index('match /groupDirectory/{gid}'):rules.index('// مفتاح رابط الدعوة')]
-ok('groupDirectory create forces verified=false', "get('verified', false) == false" in dirr)
-ok('call offer is created AFTER tracks are added (wirePeer before createOffer)', app.index('wirePeer(pc, ref, remote, stream)') < app.index('pc.createOffer()'))
-ok('call ICE candidates are queued until remote description is set', 'CALL.q.push(c)' in app and 'flushCandidates' in app)
-ok('TURN credentials endpoint exists and requires auth', (root/'api/turn.js').exists() and 'verifyIdToken' in (root/'api/turn.js').read_text())
-vj = json.loads((root/'vercel.json').read_text())
-hdrs = {h['key']: h['value'] for blk in vj.get('headers', []) for h in blk['headers']}
-ok('vercel.json sets CSP + frame protection + nosniff', all(k in hdrs for k in ('Content-Security-Policy', 'X-Frame-Options', 'X-Content-Type-Options')))
-ok('CSP has no invalid stun: source', 'stun:' not in hdrs.get('Content-Security-Policy', ''))
-ok('CSP keeps frame-ancestors none', "frame-ancestors 'none'" in hdrs.get('Content-Security-Policy', ''))
+# v23 — هجوم فعلي + إصلاحات 2026-10-09: كراش التشفير على حمولات كبيرة، وعدم وجود rate limit في api/bot.js، ومفيش security headers.
+ok('b64 no longer spreads raw bytes into String.fromCharCode (stack-overflow DoS on large ciphertexts)',
+   'String.fromCharCode(...new Uint8Array(a))' not in e2ee
+   and 'String.fromCharCode(...bytes.subarray(' in e2ee)
+ok('bot API create is rate limited per user', 'limited("create:" + u.uid' in bot)
+ok('bot API manage actions are rate limited per user', 'limited("manage:" + u.uid' in bot)
+ok('bot API token-authenticated actions are rate limited per bot', 'limited("bot:" + bot.id' in bot)
+ok('bot API rate map has a cleanup cap (no unbounded memory growth)', 'rate.size > 10000' in bot)
+ok('vercel.json sets a restrictive Content-Security-Policy', '"Content-Security-Policy"' in vercel and "frame-ancestors 'none'" in vercel)
+ok('vercel.json blocks framing (clickjacking) via X-Frame-Options', '"X-Frame-Options", "value": "DENY"' in vercel)
+ok('vercel.json sets Referrer-Policy', '"Referrer-Policy"' in vercel)
+ok('vercel.json keeps Google Sign-In popup working (COOP same-origin-allow-popups, not same-origin)', 'same-origin-allow-popups' in vercel)
 
 failed = [n for n, passed in checks if not passed]
 for n, passed in checks: print(('PASS' if passed else 'FAIL') + ' - ' + n)

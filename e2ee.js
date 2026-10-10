@@ -16,7 +16,17 @@ const pair = (algorithm, extractable = false) => crypto.subtle.generateKey(algor
 const publicJwk = k => crypto.subtle.exportKey("jwk", k);
 const signBytes = async (key, data) => crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, data);
 const enc = new TextEncoder();
-const b64 = a => btoa(String.fromCharCode(...new Uint8Array(a)));
+// ملاحظة أمنية: String.fromCharCode(...bytes) أو spread بيكرشوا بـ "Maximum call stack
+// size exceeded" لأي مصفوفة كبيرة (بيبدأ يفشل من ~60-150 ألف بايت حسب المتصفح)، ده كان بيكسر
+// فك/تشفير أي رسالة خاصة ciphertext قريبة من الحد المسموح به في firestore.rules (600000 حرف).
+// الحل: نبني الـ base64 على دفعات صغيرة (chunks) بدل ما نعدي كل البايتات دفعة واحدة كـ arguments.
+const b64 = a => {
+  const bytes = new Uint8Array(a);
+  let s = "";
+  const CHUNK = 8192;
+  for (let i = 0; i < bytes.length; i += CHUNK) s += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  return btoa(s);
+};
 const uid8 = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
 export async function initE2EEDevice(uid, publishPublic) {
