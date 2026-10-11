@@ -648,3 +648,35 @@ button>.ico{margin:auto}
 .sheet.page .call-remote{max-height:62dvh}
 .sheet.page .call-actions{position:fixed;inset-inline:0;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);display:flex;gap:10px;justify-content:center;padding:0 16px}
 .sheet.owner-sheet{height:100dvh;max-height:100dvh;border-radius:0;width:100%}
+
+/* ---------- إعدادات ES Chat Pro (من v41) ---------- */
+.settings-page-head{max-width:760px;margin:0 auto 24px;padding:8px 0 20px;border-bottom:1px solid var(--line)}
+.settings-kicker{font-size:11px;letter-spacing:.18em;color:var(--ice);font-weight:700}
+.settings-page-head h2{margin:8px 0 5px;font-size:clamp(24px,4vw,34px);letter-spacing:-.02em}
+.settings-page-head p{margin:0;color:var(--muted);font-size:13px;line-height:1.8}
+.settings-group{margin:22px auto 0;max-width:760px;background:color-mix(in srgb,var(--panel2) 72%,transparent);border:1px solid var(--line);border-radius:20px;padding:8px 12px}
+.settings-group-title{padding:9px 8px 6px;color:var(--ice);font-size:12px;font-weight:700}
+.settings-row{width:100%;display:flex;align-items:center;gap:12px;text-align:start;border:0;border-bottom:1px solid #10205a;background:transparent;color:var(--text);padding:14px 8px;min-height:68px;cursor:pointer}
+.settings-row:last-child{border-bottom:0}
+.settings-row:hover{background:#0a173f;border-radius:13px}
+.settings-row-icon{width:38px;height:38px;flex:0 0 38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(145deg,#1d4fd0,#10245f);color:#dce7ff;font-size:20px}
+.settings-row-copy{min-width:0;flex:1}
+.settings-row-copy b,.settings-row-copy small{display:block}
+.settings-row-copy b{font-size:14px}
+.settings-row-copy small{color:var(--muted);font-size:12px;margin-top:4px;line-height:1.5}
+.settings-row-arrow{color:var(--muted);font-size:26px;line-height:1;transform:scaleX(-1)}
+.settings-profile{max-width:760px;margin:4px auto 12px;padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--panel2);display:flex;align-items:center;gap:12px}
+.settings-profile .avatar{width:56px;height:56px;min-width:56px;flex:0 0 56px}
+.settings-profile>div:not(.avatar){min-width:0;flex:1}
+.settings-profile b,.settings-profile small{display:block}
+.settings-profile small{color:var(--muted);margin-top:4px}
+.privacy-note{margin:16px 0;padding:14px 16px;border:1px solid #1c3a84;border-radius:15px;background:#0a1949;line-height:1.7}
+.privacy-note b,.privacy-note span{display:block}
+.privacy-note b{color:var(--ice);font-size:13px}
+.privacy-note span{color:#c2cff1;font-size:12px;margin-top:4px}
+.device-card{display:flex;flex-direction:column;gap:6px;padding:18px;border-radius:17px;border:1px solid var(--blue);background:linear-gradient(145deg,#0e2673,#08153b)}
+.device-card b{font-size:16px}
+.device-card span{color:var(--ice);direction:ltr;text-align:start}
+.device-card small{color:var(--muted);line-height:1.6}
+.device-card i{color:var(--ok);font-size:12px;font-style:normal;margin-top:5px}
+.settings-page-head{padding-top:18px}
