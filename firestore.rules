@@ -46,7 +46,20 @@ service cloud.firestore {
       allow list: if isOwner();
       allow create, update: if signedIn() && (request.auth.uid == uid || isOwner())
         && request.resource.data.keys().hasOnly(['uid','name','photo','gender','bio','username','hideLastSeen','lastSeen','verified'])
-        && request.resource.data.uid == uid && validProfile(request.resource.data);
+        && request.resource.data.uid == uid && validProfile(request.resource.data)
+        // منع التوثيق الذاتي: علامة التوثيق ما تتكتبش true إلا من مالك الموقع أو لو حساب المستخدم نفسه موثّق
+        && (isOwner() || request.resource.data.get('verified', false) == false
+            || (exists(/databases/$(db)/documents/users/$(uid))
+                && get(/databases/$(db)/documents/users/$(uid)).data.get('verified', false) == true));
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/public/storyIndex {
+      allow get: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid','ids','updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.ids is list && request.resource.data.ids.size() <= 20;
       allow delete: if signedIn() && request.auth.uid == uid;
     }
 
@@ -60,6 +73,41 @@ service cloud.firestore {
 
     match /users/{uid}/tokens/{t} {
       allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /stories/{uid}/items/{sid} {
+      function owner() { return signedIn() && request.auth.uid == uid; }
+      function contact() {
+        return signedIn() && (exists(/databases/$(db)/documents/chats/$(uid + '_' + request.auth.uid))
+          || exists(/databases/$(db)/documents/chats/$(request.auth.uid + '_' + uid)));
+      }
+      function visible() {
+        return signedIn() && resource.data.expiresAt > request.time
+          && (resource.data.audience == 'public'
+            || (resource.data.audience == 'contacts' && contact())
+            || (resource.data.audience == 'custom' && request.auth.uid in resource.data.custom));
+      }
+      allow get: if owner() || visible();
+      allow list: if owner();
+      allow create: if owner() && request.resource.data.keys().hasOnly(['uid','text','img','audience','custom','createdAt','expiresAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.text is string && request.resource.data.text.size() <= 2000
+        && request.resource.data.img is string && request.resource.data.img.size() < 180000
+        && request.resource.data.audience in ['public','contacts','custom']
+        && request.resource.data.custom is list && request.resource.data.custom.size() <= 50
+        && request.resource.data.expiresAt is timestamp;
+      allow update: if owner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','img','audience','custom','expiresAt'])
+        && request.resource.data.text is string && request.resource.data.text.size() <= 2000
+        && request.resource.data.img is string && request.resource.data.img.size() < 180000
+        && request.resource.data.audience in ['public','contacts','custom']
+        && request.resource.data.custom is list && request.resource.data.custom.size() <= 50
+        && request.resource.data.expiresAt is timestamp;
+      allow delete: if owner();
+    }
+    match /stories/{uid}/items/{sid}/views/{viewer} {
+      allow create, update: if signedIn() && viewer == request.auth.uid
+        && request.resource.data.keys().hasOnly(['uid','at']) && request.resource.data.uid == viewer;
+      allow read: if signedIn() && (request.auth.uid == uid || request.auth.uid == viewer);
     }
 
     // مفاتيح عامة للمرحلة الأولى من التشفير: لا يوجد أي private key هنا.
@@ -110,12 +158,12 @@ service cloud.firestore {
       allow read: if signedIn() && inChat();
       allow create: if signedIn() && notBanned() && inChat() && (chatId != 'public' || isOwner() || siteFlag('publicOpen'))
         && (chatId == 'public' || (('cipher' in request.resource.data) && !('loc' in request.resource.data) && !('poll' in request.resource.data) && !('text' in request.resource.data) && !('img' in request.resource.data) && !('file' in request.resource.data)))
-        && request.resource.data.keys().hasOnly(['uid','text','at','reply','exp','img','loc','fwd','poll','cipher'])
+        && request.resource.data.keys().hasOnly(['uid','text','at','reply','exp','img','loc','fwd','poll','cipher','sticker','file'])
         && (chatId == 'public' || request.resource.data.keys().hasOnly(['uid','at','exp','cipher']))
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.get('text', '') is string
         && request.resource.data.get('text', '').size() <= 2000
-        && (request.resource.data.get('text', '').size() > 0 || 'img' in request.resource.data || 'loc' in request.resource.data || 'poll' in request.resource.data
+        && (request.resource.data.get('text', '').size() > 0 || 'img' in request.resource.data || 'loc' in request.resource.data || 'poll' in request.resource.data || 'sticker' in request.resource.data || 'file' in request.resource.data
             || ('cipher' in request.resource.data
               && request.resource.data.cipher.v == 2
               && request.resource.data.cipher.alg == 'ECDH-P256-AESGCM-DUAL'
@@ -168,6 +216,42 @@ service cloud.firestore {
       allow delete: if signedIn() && (resource.data.uid == request.auth.uid || (isOwner() && chatId == 'public'));
     }
 
+    match /calls/{cid} {
+      function callParty() { return signedIn() && (request.auth.uid == resource.data.caller || request.auth.uid == resource.data.callee); }
+      allow get: if callParty();
+      allow list: if signedIn() && request.auth.uid == resource.data.callee;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['caller','callee','kind','offer','answer','state','createdAt','expiresAt'])
+        && request.resource.data.caller == request.auth.uid
+        && request.resource.data.callee is string && request.resource.data.callee != request.auth.uid
+        && request.resource.data.kind in ['audio','video']
+        && request.resource.data.offer is map
+        && request.resource.data.state == 'ringing'
+        && request.resource.data.expiresAt is timestamp;
+      allow update: if callParty()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer','state','endedAt'])
+        && request.resource.data.state in ['ringing','active','ended','rejected']
+        && (request.auth.uid == resource.data.callee || request.resource.data.state in ['ended','rejected']);
+      allow delete: if callParty();
+    }
+    match /calls/{cid}/candidates/{candidateId} {
+      function call() { return get(/databases/$(db)/documents/calls/$(cid)).data; }
+      allow read: if signedIn() && (request.auth.uid == call().caller || request.auth.uid == call().callee);
+      allow create: if signedIn()
+        && (request.auth.uid == call().caller || request.auth.uid == call().callee)
+        && request.resource.data.keys().hasOnly(['from','candidate'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.candidate is map;
+    }
+
+    match /bots/{botId} {
+      allow get, list: if signedIn() && resource.data.owner == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+    match /botSecrets/{secretId} {
+      allow read, write: if false;
+    }
+
     // ---------- المجموعات والقنوات ----------
     function gm(g) { return request.auth.uid in g.members; }
     function gAdmin(g) { return gm(g) && (request.auth.uid == g.owner || request.auth.uid in g.admins); }
@@ -209,7 +293,9 @@ service cloud.firestore {
           // مفتاح handle مش موجود في اللستة دي، يعني ثابت بعد الإنشاء ومينفعش يتغيّر من هنا (كان ينفع يتسرق handle مجموعة تانية)
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['name','desc','photo','public','joinOpen','approve','noReact','sendAdmins','verified','members','admins','banned','muted','pin','pins'])
-          && (request.resource.data.get('verified', false) == resource.data.get('verified', false) || request.auth.uid == resource.data.owner))
+          && request.resource.data.get('verified', false) == resource.data.get('verified', false))
+        // توثيق الجروب/القناة: لمالك الموقع بس (مش لصاحب الجروب)
+        || (isOwner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verified']))
         // 2) انضمام / متابعة بالرابط
         || (resource.data.joinOpen == true && resource.data.get('approve', false) == false && !(request.auth.uid in resource.data.members) && !(request.auth.uid in resource.data.get('banned', [])) && inviteOk(gid, resource.data)
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
@@ -256,10 +342,13 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == request.resource.data.owner
         && request.resource.data.keys().hasOnly(['kind','name','desc','photo','owner','public','verified','joinOpen','handle','createdAt','lastText','lastAt','lastUid'])
         && request.resource.data.kind in ['group','channel']
+        && request.resource.data.get('verified', false) == false
         && ((request.resource.data.kind == 'channel' && request.resource.data.public == true) || request.resource.data.public == false)
         && (existsAfter(/databases/$(db)/documents/groups/$(gid))
           ? getAfter(/databases/$(db)/documents/groups/$(gid)).data.owner == request.auth.uid : false);
+      allow update: if isOwner() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verified']);
       allow update: if signedIn() && resource.data.owner == request.auth.uid
+        && request.resource.data.get('verified', false) == resource.data.get('verified', false)
         && request.auth.uid == request.resource.data.owner
         && request.resource.data.keys().hasOnly(['kind','name','desc','photo','owner','public','verified','joinOpen','handle','createdAt','lastText','lastAt','lastUid'])
         && get(/databases/$(db)/documents/groups/$(gid)).data.owner == request.auth.uid;
@@ -311,15 +400,24 @@ service cloud.firestore {
       allow create: if signedIn() && notBanned() && request.auth.uid in G().members
         && (!(request.auth.uid in G().get('muted', {})) || G().get('muted', {})[request.auth.uid] < request.time.toMillis())
         && ((G().kind == 'group' && G().get('sendAdmins', false) == false) || request.auth.uid == G().owner || request.auth.uid in G().admins)
-        && request.resource.data.keys().hasOnly(['uid','text','at','reply','img','loc','fwd','poll'])
+        && request.resource.data.keys().hasOnly(['uid','text','textAr','textEn','buttons','at','reply','img','loc','fwd','poll','topicId','sticker','file'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.get('text', '') is string
         && request.resource.data.get('text', '').size() <= 2000
-        && (request.resource.data.get('text', '').size() > 0 || 'img' in request.resource.data || 'loc' in request.resource.data || 'poll' in request.resource.data)
+        && (request.resource.data.get('text', '').size() > 0 || 'img' in request.resource.data || 'loc' in request.resource.data || 'poll' in request.resource.data || 'sticker' in request.resource.data || 'file' in request.resource.data)
+        && (!('sticker' in request.resource.data) || (request.resource.data.sticker is map && request.resource.data.sticker.keys().hasOnly(['emoji','img','label'])))
+        && (!('file' in request.resource.data) || (request.resource.data.file is map && request.resource.data.file.keys().hasOnly(['name','type','bytes','data','dur','wf']) && request.resource.data.file.data is string))
         && (!('poll' in request.resource.data) || (request.resource.data.poll.keys().hasOnly(['q','o'])
               && request.resource.data.poll.q is string && request.resource.data.poll.q.size() >= 1 && request.resource.data.poll.q.size() <= 200
               && request.resource.data.poll.o is list && request.resource.data.poll.o.size() >= 2 && request.resource.data.poll.o.size() <= 12))
-        && request.resource.data.get('img', '').size() < 400000;
+        && request.resource.data.get('img', '').size() < 400000
+        && request.resource.data.get('textAr', '') is string && request.resource.data.get('textAr', '').size() <= 2000
+        && request.resource.data.get('textEn', '') is string && request.resource.data.get('textEn', '').size() <= 2000
+        && (!('buttons' in request.resource.data) || (request.resource.data.buttons is list && request.resource.data.buttons.size() <= 8))
+        && (!('topicId' in request.resource.data)
+          || (request.resource.data.topicId is string && request.resource.data.topicId.size() >= 1
+              && request.resource.data.topicId.size() <= 40
+              && exists(/databases/$(db)/documents/groups/$(gid)/topics/$(request.resource.data.topicId))));
       allow update: if (signedIn() && resource.data.uid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deleted','text','img','loc','reply'])
         && request.resource.data.deleted == true)
@@ -342,6 +440,22 @@ service cloud.firestore {
                   && request.resource.data.votes[request.auth.uid] < resource.data.poll.o.size())));
       allow delete: if signedIn() && (resource.data.uid == request.auth.uid
         || (request.auth.uid in G().members && (request.auth.uid == G().owner || request.auth.uid in G().admins)));
+    }
+
+    match /groups/{gid}/topics/{tid} {
+      function topicAdmin() { return signedIn() && exists(/databases/$(db)/documents/groups/$(gid)) && gAdmin(get(/databases/$(db)/documents/groups/$(gid)).data); }
+      allow get, list: if signedIn() && exists(/databases/$(db)/documents/groups/$(gid))
+        && request.auth.uid in get(/databases/$(db)/documents/groups/$(gid)).data.members;
+      allow create: if topicAdmin()
+        && request.resource.data.keys().hasOnly(['name','createdBy','createdAt','archived'])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.name is string && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 40 && request.resource.data.archived == false;
+      allow update: if topicAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','archived'])
+        && request.resource.data.name is string && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 40 && request.resource.data.archived is bool;
+      allow delete: if topicAdmin();
     }
 
     // إيصالات القراءة: لا يكتبها إلا القارئ نفسه، ولا يقرأها إلا مرسل الرسالة أو مشرف المجموعة/القناة أو طرف الخاص

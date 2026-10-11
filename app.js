@@ -159,10 +159,88 @@ const IC = {
   star: '<path d="m12 3.3 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.6l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>',
   pushpin: '<path d="M9 3h6l-1 6 3 3v2H7v-2l3-3zM12 14v7"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
-  lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>'
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8h.01"/>',
+  reply: '<path d="M9.5 6 4 11.5 9.5 17"/><path d="M4 11.5h9a6.5 6.5 0 0 1 6.5 6.5v1"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5A2.5 2.5 0 0 0 13 4H6.5A2.5 2.5 0 0 0 4 6.5V13a2.5 2.5 0 0 0 2.5 2.5h2"/>',
+  edit: '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  forward: '<path d="m14.5 6 5.5 5.5-5.5 5.5"/><path d="M20 11.5h-9A6.5 6.5 0 0 0 4.5 18v1"/>',
+  eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 6.2A9.6 9.6 0 0 1 12 6c5 0 8.5 4 9.5 6a12 12 0 0 1-2.6 3.3M6.3 7.5A12.5 12.5 0 0 0 2.5 12c1 2 4.5 6 9.5 6a9.5 9.5 0 0 0 3.3-.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4.5h11l-2 4 2 4H5"/>',
+  user: '<circle cx="12" cy="8.5" r="3.7"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  users: '<circle cx="9" cy="8.5" r="3.4"/><path d="M2.8 19.5a6.2 6.2 0 0 1 12.4 0"/><path d="M16 5.4a3.3 3.3 0 0 1 0 6.2M18 14a6 6 0 0 1 3.2 5.5"/>',
+  archive: '<rect x="3.5" y="4.5" width="17" height="4.5" rx="1.5"/><path d="M5 9v8.5A2 2 0 0 0 7 19.5h10a2 2 0 0 0 2-2V9M10 13h4"/>',
+  bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
+  bellOff: '<path d="M3 3l18 18"/><path d="M8.5 5.3A6 6 0 0 1 18 11v4M6 11v5.5l-1.5 2H16"/><path d="M10 21a2.2 2.2 0 0 0 4 0"/>',
+  folder: '<path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  timer: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 3h5"/>',
+  block: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+  sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/>',
+  share: '<circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="6" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="m8.3 10.8 7.4-3.6M8.3 13.2l7.4 3.6"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>',
+  megaphone: '<path d="M4 10v4h3l8 4.5v-13L7 10z"/><path d="M18.5 9.5a4 4 0 0 1 0 5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  chev: '<path d="m14.5 6-6 6 6 6"/>',
+  shield: '<path d="M12 3.5 5 6v5.5c0 4.4 2.9 7.6 7 9 4.1-1.4 7-4.6 7-9V6z"/><path d="m9 12 2.2 2.2L15.2 10"/>',
+  device: '<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/>',
+  palette: '<path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.4 0 2-.9 1.6-2-.4-1.2.3-2.2 1.6-2.2H17a3.5 3.5 0 0 0 3.5-3.5C20.5 7 16.8 3.5 12 3.5z"/><path d="M8 11h.01M11 7.8h.01M15 8.5h.01"/>',
+  database: '<ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9c-2.6-2.6-3.8-5.6-3.8-9S9.4 5.6 12 3z"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  bot: '<rect x="4.5" y="8" width="15" height="11" rx="3"/><path d="M12 8V4.5M9 13h.01M15 13h.01M9.5 16.5h5"/>',
+  bolt: '<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',
+  heart: '<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.2 4.3 4.3 0 0 1 19.5 10C19.5 15.4 12 20 12 20z"/>',
+  logout: '<path d="M9.5 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h3"/><path d="M15 8l4 4-4 4M19 12H9.5"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  story: '<circle cx="12" cy="12" r="8.5" stroke-dasharray="3.2 2.6"/><circle cx="12" cy="12" r="3.5"/>',
+  hash: '<path d="M9.5 4 7.5 20M16.5 4l-2 16M4.5 9h15.5M4 15h15.5"/>',
+  list: '<path d="M8 7h10M8 12h10M8 17h10M4.5 7h.01M4.5 12h.01M4.5 17h.01"/>',
+  chat: '<path d="M4.5 6.5A2.5 2.5 0 0 1 7 4h10a2.5 2.5 0 0 1 2.5 2.5v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 4v-4A2.5 2.5 0 0 1 4.5 13.5z"/>',
+  volume: '<path d="M5 9.5h3l4-3.5v12l-4-3.5H5z"/><path d="M16 9.5a3.5 3.5 0 0 1 0 5"/>',
+  warning: '<path d="M12 4 3 19.5h18z"/><path d="M12 10v4.5M12 17.2h.01"/>',
+  refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4M19.5 4.5v4h-4"/>',
+  battery: '<rect x="3" y="8" width="16" height="9" rx="2.2"/><path d="M21.5 11v3M7 12.5h6"/>',
+  text: '<path d="M4 18 9 6l5 12M5.8 14h6.4M15.5 18l2.5-6 2.5 6M16.4 16.2h3.2"/>',
+  more: '<circle cx="12" cy="5.5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="18.5" r="1.5"/>'
 };
 const ic = (n, s = 22, cls = "") => `<svg class="ico ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n] || ""}</svg>`;
 document.querySelectorAll("[data-ic]").forEach(el => { el.innerHTML = ic(el.dataset.ic, +el.dataset.s || 22); });
+
+/* ---- أيقونات الخيارات في القوائم + تحويل رموز المعاينة (📷 📊 🔒 ...) لأيقونات SVG ---- */
+const MENU_IC = { info: "info", reply: "reply", copy: "copy", edit: "edit", star: "star", fwd: "forward", hide: "eyeoff", report: "flag", pin: "pushpin", del: "trash", profile: "user", arch: "archive", mute: "bellOff", lbl: "folder", ttl: "timer", blk: "block", topics: "hash", story: "story", stories: "play", group: "users", channel: "megaphone", find: "search", leave: "logout", stLbl: "folder", stQr: "bolt", stStar: "star", mkL: "folder" };
+function decorateMenus(root) {
+  root.querySelectorAll("button.mrow").forEach(b => {
+    if (b.querySelector(".mi")) return;
+    const n = MENU_IC[b.dataset.a || b.id]; if (!n) return;
+    b.insertAdjacentHTML("afterbegin", `<i class="mi">${ic(n, 18)}</i>`); b.classList.add("hasmi");
+  });
+}
+const PV_IC = { "📊": "poll", "📷": "image", "🎤": "mic", "🎙": "mic", "📎": "attach", "🎨": "sticker", "📍": "pin", "🔒": "lock", "🚫": "block" };
+const PV_RE = /^(\s*(?:[^\s:]{1,40}:\s)?)(📊|📷|🎤|🎙\uFE0F?|📎|🎨|📍|🔒|🚫)\s?/u, PV_SKIP = ".msg,textarea,input,.emo-row,.stk-grid,.emo-grid,[contenteditable]";
+function pvIcons(root) {
+  if (!root || root.nodeType === 8) return;
+  const base = root.nodeType === 3 ? root.parentNode : root; if (!base || !base.nodeType) return;
+  const todo = [];
+  if (root.nodeType === 3) { if (PV_RE.test(root.nodeValue)) todo.push(root); }
+  else { const w = document.createTreeWalker(base, NodeFilter.SHOW_TEXT); let n; while ((n = w.nextNode())) if (PV_RE.test(n.nodeValue)) todo.push(n); }
+  for (const n of todo) {
+    if (!n.parentElement || n.parentElement.closest(PV_SKIP)) continue;
+    const m = n.nodeValue.match(PV_RE), k = m[2].replace("\uFE0F", ""), s = document.createElement("span");
+    s.className = "pvi"; s.innerHTML = ic(PV_IC[k] || "info", 15);
+    n.nodeValue = n.nodeValue.slice(m[0].length); if (m[1]) n.parentNode.insertBefore(document.createTextNode(m[1]), n); n.parentNode.insertBefore(s, n);
+  }
+  if (base.querySelectorAll) base.querySelectorAll("img.emo-img").forEach(im => {
+    const k = (im.alt || "").replace("\uFE0F", ""); if (!PV_IC[k] || im.closest(PV_SKIP)) return;
+    const prev = im.previousSibling; if (prev && !(prev.nodeType === 3 && !prev.nodeValue.trim())) return;
+    const s = document.createElement("span"); s.className = "pvi"; s.innerHTML = ic(PV_IC[k], 15); im.replaceWith(s);
+  });
+}
+{ let pvQ = 0, pend = [];
+  new MutationObserver(ms => { for (const m of ms) { if (m.type === "characterData") pend.push(m.target); else m.addedNodes.forEach(n => pend.push(n)); } if (pvQ) return; pvQ = requestAnimationFrame(() => { pvQ = 0; const l = pend; pend = []; l.forEach(pvIcons); }); }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  pvIcons(document.body); }
 
 /* ---------------- شكل الإيموجي (النظام / أندرويد-واتساب / آيفون) ---------------- */
 const EMO_STYLES = [["system", "النظام"], ["google", "أندرويد / واتساب"], ["apple", "آيفون"]];
@@ -251,7 +329,7 @@ function vpClick(e, el) {
   au.play().catch(() => toast("تعذّر تشغيل الرسالة الصوتية"));
 }
 
-function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 2600); }
+function toast(t) { const el = $("#toast"); el.textContent = String(t).replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "").replace(/\s{2,}/g, " ").trim(); el.classList.add("show"); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("show"), 2600); }
 
 const isOfficial = uid => !!uid && !!S.site && S.site.ownerUid === uid;
 const ownerBadge = s => `<span class="vbadge-wrap owner-badge" title="المالك · حساب رسمي" aria-label="المالك · حساب رسمي"><svg class="vbadge" width="${s}" height="${s}" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="#f5b800"/><path d="M6 16.5h12l.8-7-3.6 3L12 7.8 8.8 12.5l-3.6-3z" fill="#3a2600"/><rect x="6" y="17.3" width="12" height="1.6" rx=".8" fill="#3a2600"/></svg></span>`;
@@ -289,23 +367,36 @@ addEventListener("popstate", () => {
   if (ignorePop > 0) { ignorePop--; if (!ignorePop) deferred.splice(0).forEach(f => f()); return; }
   const l = LAYERS.pop(); if (l) l.close();
 });
-function modalDom() { $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "page", "att-sheet", "emo-sheet", "owner-sheet", "sp-sheet", "bf-sheet", "tgp-sheet"); clearInterval(_ownTimer); }
+const MSTACK = [];
+function modalDom() { MSTACK.length = 0; $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "page", "att-sheet", "emo-sheet", "owner-sheet", "sp-sheet", "bf-sheet", "tgp-sheet"); clearInterval(_ownTimer); }
 function closeModal() {
   const was = !$("#modal").classList.contains("hidden"); modalDom();
   if (was) setTimeout(() => { if ($("#modal").classList.contains("hidden")) layerClose("modal"); }, 0);
 }
+/* مفتاح الشاشة: لو نفس الشاشة اتفتحت تاني (تحديث) بتتبدّل، لو شاشة تانية بتتحط فوقها ورجوع بيرجّعك للأولى */
+const mKey = html => { const m = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>|class="menu-h"[^>]*>([\s\S]*?)<\/div>|<b>(لوحة المالك)<\/b>/); return m ? (m[1] || m[2] || m[3]).replace(/<[^>]*>/g, "").trim() : "h" + html.length + html.slice(0, 160); };
+function snapModal() { const sh = $("#sheet"); return { nodes: Array.from(sh.childNodes), cls: sh.className, top: sh.scrollTop, key: sh.dataset.mk || "", h: { onclick: sh.onclick, onchange: sh.onchange, oninput: sh.oninput } }; }
+function modalBack() {
+  if (!MSTACK.length) return closeModal();
+  const s = MSTACK.pop(), sh = $("#sheet");
+  sh.innerHTML = ""; s.nodes.forEach(n => sh.appendChild(n)); sh.className = s.cls; Object.assign(sh, s.h); sh.dataset.mk = s.key; sh.scrollTop = s.top;
+}
+function modalLayerBack() { if (MSTACK.length) { modalBack(); layerOpen("modal", modalLayerBack); } else modalDom(); }
 function openModal(html, wide = false, page = false) {
-  const sh = $("#sheet");
+  const sh = $("#sheet"), was = !$("#modal").classList.contains("hidden"), key = mKey(html);
+  if (was && sh.dataset.mk !== key) MSTACK.push(snapModal());
   page = page || /class="(prof|call-screen)"|sp-sub-h|stats-tabs/.test(html);
   sh.className = "sheet" + (wide ? " wide" : "") + (page ? " page" : "");
+  sh.dataset.mk = key; sh.onclick = sh.onchange = sh.oninput = null;
   sh.scrollTop = 0;
-  sh.innerHTML = `<button class="x" id="xBtn" aria-label="رجوع">${page ? `<svg viewBox="0 0 24 24" width="22" height="22"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>` : ic("close", 18)}</button>` + html;
-  $("#modal").classList.remove("hidden"); layerOpen("modal", modalDom);
-  $("#xBtn").onclick = closeModal;
+  sh.innerHTML = `<button class="x" id="xBtn" aria-label="رجوع">${page ? ic("chev", 22) : ic("close", 18)}</button>` + html;
+  $("#modal").classList.remove("hidden"); layerOpen("modal", modalLayerBack);
+  $("#xBtn").onclick = modalBack;
+  decorateMenus(sh);
   return sh;
 }
 $("#modal").addEventListener("mousedown", e => { if (e.target.id === "modal") closeModal(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") modalBack(); });
 
 /* ---- منع النسخ والتحديد في الموقع (إلا جوه خانات الكتابة) ---- */
 const inField = t => !!(t && t.closest && t.closest("input,textarea"));
@@ -499,7 +590,7 @@ function renderForm(root, mode) {
           const s = await getDoc(doc(db, "usernames", v));
           if (u.value.trim().toLowerCase() !== v) return;
           unameOk = !s.exists(); h.className = "hint " + (unameOk ? "ok" : "err");
-          h.textContent = unameOk ? "الاسم متاح ✓" : "الاسم ده مستخدم، جرّب غيره";
+          h.textContent = unameOk ? "الاسم متاح" : "الاسم ده مستخدم، جرّب غيره";
         } catch { h.className = "hint err"; h.textContent = "تعذّر التحقق (راجع قواعد Firestore)"; }
       }, 400);
     };
@@ -700,7 +791,8 @@ const ACCENTS = [["blue", "#2f6bff", "أزرق"], ["violet", "#8b5cf6", "بنف�
 const WALLS = [["dots", "نقط"], ["grid", "شبكة"], ["none", "سادة"]];
 function applyTheme() { const r = document.documentElement; r.dataset.accent = LS.get("accent", "blue"); r.dataset.wp = LS.get("wp", "dots"); r.dataset.fs = LS.get("fs", "m"); r.dataset.dens = LS.get("dens", "n"); r.dataset.motion = LS.get("motion", true) ? "on" : "off"; }
 applyTheme();
-const settingsRow = (id, icon, title, sub = "") => `<button type="button" class="settings-row" data-settings="${id}"><span class="settings-row-icon">${icon}</span><span class="settings-row-copy"><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="settings-row-arrow">‹</span></button>`;
+const ROW_IC = { privacyCalls: "phone", privacyContacts: "block", privacyLock: "lock", privacyAdvanced: "sliders", privacyCheckup: "shield", folders: "folder", quick: "bolt", stars: "star", chatMedia: "image", drafts: "edit", account: "user", privacy: "shield", devices: "device", chats: "chat", notifications: "bell", appearance: "palette", language: "globe", data: "database", power: "battery", about: "info" };
+const settingsRow = (id, icon, title, sub = "") => `<button type="button" class="settings-row" data-settings="${id}"><span class="settings-row-icon">${ic(ROW_IC[id] || "sliders", 22)}</span><span class="settings-row-copy"><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="settings-row-arrow">${ic("chev", 18)}</span></button>`;
 function settingsPage(title, sub, html) {
   return openModal(`<div class="settings-page-head"><div class="settings-kicker">ES CHAT PRO · CONTROL CENTER</div><h2>${title}</h2><p>${sub}</p></div>${html}`, false, true);
 }
@@ -725,7 +817,7 @@ function openSettingsSection(id) {
   if (id === "privacyContacts") { const blocked=S.prefs.block.length; const sh=settingsPage("جهات الاتصال المحظورة", "الحسابات المحظورة لا يمكنها مراسلتك أو إزعاجك.", `<div class="stats"><div class="stat"><b>${blocked}</b><span>حساب محظور</span></div></div><div class="privacy-note"><b>إدارة الحظر</b><span>يمكنك حظر أو إلغاء حظر أي حساب من قائمة خيارات المحادثة. لا يتم نشر قائمة الحظر لأي مستخدم آخر.</span></div><button type="button" class="btn-primary" id="bcManage">فتح إعدادات المحادثات</button>`);sh.querySelector("#bcManage").onclick=openSettingsAdvanced;return sh; }
   if (id === "privacyLock") { const sh=settingsPage("قفل التطبيق والمحادثات", "حماية محلية للجلسة الحالية. لا يتم إرسال رمز القفل إلى Firebase.", `${switchRow("lockApp",LS.get("app_lock",false),"قفل التطبيق","تفعيل حالة القفل المحلية عند مغادرة التطبيق")}${switchRow("lockChat",LS.get("chat_lock",false),"قفل المحادثات الخاصة","إخفاء معاينات المحادثات الخاصة على هذا الجهاز")}<p class="hint">هذه الإعدادات محلية لهذا المتصفح. لا تعتبر بديلًا عن قفل نظام الهاتف أو كلمة مرور الحساب.</p>`);sh.querySelector("#lockApp").onchange=e=>{LS.set("app_lock",e.target.checked);toast(e.target.checked?"تم تفعيل القفل المحلي":"تم إيقاف القفل المحلي");};sh.querySelector("#lockChat").onchange=e=>LS.set("chat_lock",e.target.checked);return sh; }
   if (id === "privacyAdvanced") { const sh=settingsPage("الخصوصية المتقدمة", "خيارات تقلل البيانات الظاهرة أثناء التصفح والاتصال.", `${switchRow("paLinks",!LS.get("lcards",true),"تعطيل معاينات الروابط","لا تُنشئ بطاقة معاينة للرابط")}${switchRow("paIP",LS.get("call_protect",true),"حماية عنوان الاتصال","تفضيل طبقات الحماية المتاحة للمكالمات")}`);sh.querySelector("#paLinks").onchange=e=>{LS.set("lcards",!e.target.checked);if(S.chat?.lastDocs)renderMsgs(S.chat.lastDocs);};sh.querySelector("#paIP").onchange=e=>LS.set("call_protect",e.target.checked);return sh; }
-  if (id === "privacyCheckup") { const sh=settingsPage("فحص الخصوصية", "مراجعة سريعة لأهم إعدادات الحماية في حسابك.", `<div class="privacy-note"><b>${me.hideLastSeen?"✓":"!"} الظهور</b><span>${me.hideLastSeen?"آخر ظهورك مخفي":"آخر ظهورك ظاهر للحسابات المسموح لها"}</span></div><div class="privacy-note"><b>${me.readReceipts!==false?"✓":"!"} تأكيدات القراءة</b><span>${me.readReceipts!==false?"مفعّلة":"متوقفة"}</span></div><div class="privacy-note"><b>✓ تشفير المحادثات الخاصة</b><span>يتم استخدام E2EE عند توفر مفاتيح الطرفين.</span></div><button type="button" class="btn-primary" id="pcBack">مراجعة الخصوصية</button>`);sh.querySelector("#pcBack").onclick=()=>openSettingsSection("privacy");return sh; }
+  if (id === "privacyCheckup") { const sh=settingsPage("فحص الخصوصية", "مراجعة سريعة لأهم إعدادات الحماية في حسابك.", `<div class="privacy-note"><b>${ic(me.hideLastSeen?"check":"warning",15)} الظهور</b><span>${me.hideLastSeen?"آخر ظهورك مخفي":"آخر ظهورك ظاهر للحسابات المسموح لها"}</span></div><div class="privacy-note"><b>${ic(me.readReceipts!==false?"check":"warning",15)} تأكيدات القراءة</b><span>${me.readReceipts!==false?"مفعّلة":"متوقفة"}</span></div><div class="privacy-note"><b>${ic("shield", 15)} تشفير المحادثات الخاصة</b><span>يتم استخدام E2EE عند توفر مفاتيح الطرفين.</span></div><button type="button" class="btn-primary" id="pcBack">مراجعة الخصوصية</button>`);sh.querySelector("#pcBack").onclick=()=>openSettingsSection("privacy");return sh; }
   if (id === "notifications") {
     const perm = canNotify() ? Notification.permission : "unsupported";
     const sh = settingsPage("الإشعارات والأصوات", "حدد ما يصل إليك ومتى يصمت التطبيق.", `${perm === "denied" ? `<div class="hint err">إذن الإشعارات مرفوض من المتصفح. فعّله من إعدادات الموقع.</div>` : ""}${switchRow("nPush", prefs.notifs && perm === "granted", "إشعارات الرسائل", "تنبيه عند وصول رسالة جديدة")}${switchRow("nSound", prefs.sound, "أصوات التنبيه", "تشغيل صوت قصير عند وصول رسالة")}${switchRow("nPrev", prefs.preview, "إظهار نص الرسالة", "عند الإيقاف يظهر عنوان رسالة جديدة فقط")}${switchRow("nQuiet", LS.get("quiet",false), "ساعات الهدوء", "إيقاف الإشعارات الصوتية خلال الفترة المحددة")}<div class="field qrow"><label>من</label><input type="time" id="nFrom" value="${esc(LS.get("qFrom","23:00"))}"><label>إلى</label><input type="time" id="nTo" value="${esc(LS.get("qTo","07:00"))}"></div><div class="actions"><button class="btn-ghost" id="nTest">تجربة إشعار</button><button class="btn-ghost" id="nCheck">فحص الإشعارات</button></div>`);
@@ -766,7 +858,7 @@ function openSettingsAdvanced() {
     <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="stTest">جرّب إشعار</button><button class="btn-ghost" id="stCheck">فحص الإشعارات</button></div>
     <div class="panel-h">الخصوصية</div>
     ${switchRow("stHide", !!me.hideLastSeen, "إخفاء حالتي", "محدش هيشوف إنك متصل أو آخر ظهور أو إنك بتكتب")}
-    ${switchRow("stRR", me.readReceipts !== false, "تأكيد القراءة (✓✓)", "لو قفلته محدش هيعرف إنك قريت، وإنت كمان مش هتشوف إن اتقرت رسايلك")}
+    ${switchRow("stRR", me.readReceipts !== false, "تأكيد القراءة ", "لو قفلته محدش هيعرف إنك قريت، وإنت كمان مش هتشوف إن اتقرت رسايلك")}
     ${switchRow("stNoAdd", me.noAdd === true, "منع إضافتي للمجموعات", "محدش يقدر يضيفك لمجموعة بدون ما تنضم بنفسك بالرابط")}
     <div class="panel-h">المظهر</div>
     <div class="swatches">${ACCENTS.map(([k, c, t]) => `<button type="button" class="sw big ${LS.get("accent", "blue") === k ? "on" : ""}" data-acc="${k}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div>
@@ -1090,7 +1182,7 @@ function renderListNow() {
     const r = S.found;
     if (r && r.uid) h += `<div class="chat-item" data-open="${esc(r.uid)}">${avatar(r.u)}<div class="chat-meta"><div class="row1"><div class="name">${esc(r.u.name)}${badge(r.u, 15)}</div></div><div class="row2"><div class="preview"><bdi>@${esc(r.u.username)}</bdi></div></div></div></div>`;
     else if (r && r.g) h += `<div class="chat-item" data-open="g:${esc(r.g.id)}">${gAvatar(r.g)}<div class="chat-meta"><div class="row1"><div class="name">${esc(r.g.name)}</div></div><div class="row2"><div class="preview">${r.g.kind === "channel" ? "قناة" : "مجموعة"} · ${gCount(r.g)}</div></div></div></div>`;
-    else if (r && r.self) h += `<div class="empty-list">ده اليوزر بتاعك 🙂</div>`;
+    else if (r && r.self) h += `<div class="empty-list">ده اليوزر بتاعك</div>`;
     else if (r && r.none) h += `<div class="empty-list">مفيش نتايج. اتأكد إن الاسم مكتوب صح.</div>`;
     else h += `<div class="empty-list">اكتب اليوزر كامل (3 حروف على الأقل)...</div>`;
   }
@@ -1305,7 +1397,7 @@ function renderMsgsPlain(docs) {
     const tick = mine && c.peer && !m.deleted ? (S.me.readReceipts === false ? TK1 : seen ? TK2 : TK1) : "";
     if (isCh) {
       const st = stars.has(c.id + "/" + d.id) ? `<span class="star">${ic("star", 11, "fill")}</span>` : "";
-      const acts = m.deleted ? "" : `${cg && cg.noReact ? "" : `<button type="button" class="post-btn" data-pm aria-label="تفاعل">☺<b>+</b></button>`}<button type="button" class="post-btn" data-pm aria-label="خيارات"><svg width="16" height="16" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg></button>`;
+      const acts = m.deleted ? "" : `${cg && cg.noReact ? "" : `<button type="button" class="post-btn" data-pm aria-label="تفاعل">${ic("smile", 18)}<b>+</b></button>`}<button type="button" class="post-btn" data-pm aria-label="خيارات"><svg width="16" height="16" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="19" cy="12" r="2" fill="currentColor"/></svg></button>`;
       h += `<div class="msg them post${m.deleted ? " gone" : ""}${m.sticker && !m.deleted && !m.text ? " stk" : ""}" data-mid="${esc(d.id)}"><div class="post-h">${cg ? gAvatar(cg, "tiny") : ""}<b>${cg ? esc(cg.name) : ""}</b>${cg && cg.verified ? badge(cg, 13) : ""}<span class="post-time">${fmtTime(dt)}</span></div>`
         + body + `<div class="post-f">${st}<span class="post-sp"></span>${acts}</div></div>`;
       continue;
@@ -1593,7 +1685,7 @@ $("#chatSearchBtn").onclick = openChatSearch;
 $("#chatMenuBtn").onclick = () => { if (!S.chat) return; if (S.chat.peer) openChatMenu(S.chat.peer); else if (S.chat.group) openGroupMenu(S.chat.id); };
 function openTtlPicker(peer, cur) {
   const opts = [[0, "إيقاف"], [86400, "24 ساعة"], [604800, "7 أيام"], [7776000, "90 يوم"]];
-  const sh = openModal(`<div class="menu"><div class="menu-h">الرسائل المختفية</div><p class="sub" style="margin:0 4px 8px">الرسايل الجديدة بس هتتمسح من المحادثة بعد المدة دي.</p>${opts.map(([s, t]) => `<button class="mrow ${s === cur ? "on" : ""}" data-s="${s}"><span>${t}</span>${s === cur ? "<small>✓</small>" : ""}</button>`).join("")}</div>`);
+  const sh = openModal(`<div class="menu"><div class="menu-h">الرسائل المختفية</div><p class="sub" style="margin:0 4px 8px">الرسايل الجديدة بس هتتمسح من المحادثة بعد المدة دي.</p>${opts.map(([s, t]) => `<button class="mrow ${s === cur ? "on" : ""}" data-s="${s}"><span>${t}</span>${s === cur ? `<small>${ic("check", 16)}</small>` : ""}</button>`).join("")}</div>`);
   sh.querySelector(".menu").onclick = async e => {
     const b = e.target.closest("[data-s]"); if (!b) return; closeModal();
     try { await setDoc(doc(db, "chats", dmId(peer)), { members: [S.user.uid, peer].sort(), ttl: +b.dataset.s }, { merge: true }); toast("اتحفظ"); } catch { toast("تعذّر الحفظ"); }
@@ -1752,7 +1844,7 @@ function quickSuggest() {
   pop.onclick = e => { const b = e.target.closest("[data-i]"); if (!b) return; $("#input").value = list[+b.dataset.i].t; hideQuick(); $("#input").focus(); };
 }
 $("#input").addEventListener("input", () => {
-  saveDraft();
+  saveDraft(); syncSendMic();
   quickSuggest();
   const c = S.chat; if (!c || !c.peer || !$("#input").value.trim() || (S.me && S.me.hideLastSeen)) return;
   if (Date.now() - c.sentTyping < 2500) return;
@@ -1893,12 +1985,12 @@ function openPanel(tab = "emo") {
   sh.classList.add("emo-sheet", "tgp-sheet");
   const body = sh.querySelector("#tgpBody"), bar = sh.querySelector("#tgpBar");
   let cur = tab, lpT = 0, lpFired = false;
-  const stkTile = (x, favs) => `<button type="button" class="stk-tile" data-sid="${esc(x.id)}">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : `<span>${esc(x.emoji)}</span>`}${favs.includes(x.id) ? `<i class="stk-fav">★</i>` : ""}</button>`;
+  const stkTile = (x, favs) => `<button type="button" class="stk-tile" data-sid="${esc(x.id)}">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy">` : `<span>${esc(x.emoji)}</span>`}${favs.includes(x.id) ? `<i class="stk-fav">${ic("star", 13)}</i>` : ""}</button>`;
   const stkHtml = () => {
     const items = stickerItems(), byId = new Map(items.map(x => [x.id, x])), favs = LS.get(STK_FAV, []).filter(i => byId.has(i)), rec = LS.get(STK_REC, []).filter(i => byId.has(i));
     const custom = items.filter(x => x.id[0] === "c"), pack = items.filter(x => x.id[0] === "e");
     const sec = (t, arr) => arr.length ? `<div class="stk-h">${t}</div><div class="stk-grid">${arr.map(x => stkTile(x, favs)).join("")}</div>` : "";
-    return (rec.length ? `<div class="stk-strip"><i class="stk-clock">🕘</i>${rec.slice(0, 14).map(i => stkTile(byId.get(i), favs)).join("")}</div>` : "")
+    return (rec.length ? `<div class="stk-strip"><i class="stk-clock">${ic("clock", 15)}</i>${rec.slice(0, 14).map(i => stkTile(byId.get(i), favs)).join("")}</div>` : "")
       + sec("المفضلة", favs.map(i => byId.get(i)))
       + sec("مستخدمة حديثًا", rec.map(i => byId.get(i)).slice(0, 8))
       + `<div class="stk-h">ملصقاتي</div><div class="stk-grid"><button type="button" class="stk-tile stk-add" data-add="1"><span>＋</span><small>إنشاء</small></button>${custom.map(x => stkTile(x, favs)).join("")}</div>`
@@ -1922,7 +2014,7 @@ function openPanel(tab = "emo") {
     const t = e.target.closest("[data-sid]"); if (!t) return; lpFired = false; clearTimeout(lpT);
     lpT = setTimeout(() => {
       lpFired = true; const id = t.dataset.sid, favs = LS.get(STK_FAV, []), has = favs.includes(id);
-      LS.set(STK_FAV, has ? favs.filter(x => x !== id) : [...favs, id].slice(-30)); toast(has ? "اتشال من المفضلة" : "اتضاف للمفضلة ★"); paint("stk", true);
+      LS.set(STK_FAV, has ? favs.filter(x => x !== id) : [...favs, id].slice(-30)); toast(has ? "اتشال من المفضلة" : "اتضاف للمفضلة"); paint("stk", true);
     }, 450);
   });
   for (const ev of ["pointerup", "pointerleave", "pointercancel", "scroll"]) body.addEventListener(ev, () => clearTimeout(lpT), true);
@@ -2162,7 +2254,7 @@ function openCreate(kind) {
       if (!v) { handleOk = true; h.textContent = "حروف إنجليزي صغيرة وأرقام و _"; return; }
       if (!/^[a-z0-9_]{3,20}$/.test(v)) { h.textContent = "حروف إنجليزي صغيرة وأرقام و _ (من 3 لـ 20)"; return; }
       h.textContent = "بتأكد إن الاسم متاح...";
-      ht = setTimeout(async () => { try { const s = await getDoc(doc(db, "handles", v)); if (q("#cH").value.trim().toLowerCase() !== v) return; handleOk = !s.exists(); h.className = "hint " + (handleOk ? "ok" : "err"); h.textContent = handleOk ? "الاسم متاح ✓" : "الاسم ده مستخدم، جرّب غيره"; } catch { h.className = "hint err"; h.textContent = "تعذّر التحقق"; } }, 400);
+      ht = setTimeout(async () => { try { const s = await getDoc(doc(db, "handles", v)); if (q("#cH").value.trim().toLowerCase() !== v) return; handleOk = !s.exists(); h.className = "hint " + (handleOk ? "ok" : "err"); h.textContent = handleOk ? "الاسم متاح" : "الاسم ده مستخدم، جرّب غيره"; } catch { h.className = "hint err"; h.textContent = "تعذّر التحقق"; } }, 400);
     };
   } else {
     const paintM = () => { q("#cMList").innerHTML = members.map(m => `<span class="m-chip" data-r="${esc(m.uid)}">${esc(m.u.name)} ${ic("close", 11)}</span>`).join(""); };
@@ -2374,7 +2466,7 @@ async function runPushCheck() {
   const step = (ok, t, d) => { rows.push(`<div class="pc ${ok ? "ok" : "bad"}"><b>${ok ? ic("check", 16) : ic("close", 16)}</b><div><span>${esc(t)}</span>${d ? `<small>${esc(d)}</small>` : ""}</div></div>`); list.innerHTML = rows.join(""); return ok; };
   if (!step("Notification" in window && "serviceWorker" in navigator && "PushManager" in window, "المتصفح بيدعم الإشعارات", "على الآيفون لازم تضيف الموقع للشاشة الرئيسية. على الأندرويد استخدم كروم.")) return;
   if (!step(Notification.permission === "granted", "إذن الإشعارات", Notification.permission === "granted" ? "" : "الإذن حاليًا: " + Notification.permission + ". فعّله من إعدادات الموقع في المتصفح.")) return;
-  if (!step(VAPID_KEY.length > 40, "مفتاح VAPID في firebase-config.js", VAPID_KEY ? "" : "فاضي. انسخ المفتاح من Firebase ← Cloud Messaging ← Web Push certificates والصقه في VAPID_KEY.")) return;
+  if (!step(VAPID_KEY.length > 40, "مفتاح VAPID في firebase-config.js", VAPID_KEY ? "" : "فاضي. انسخ المفتاح من Firebase › Cloud Messaging › Web Push certificates والصقه في VAPID_KEY.")) return;
   let reg; try { reg = await withTimeout(navigator.serviceWorker.ready, 8000); } catch {}
   if (!step(!!(reg && reg.active), "الـ service worker شغال", reg ? "" : "ملف firebase-messaging-sw.js مش متحمّل. اتأكد إنه مرفوع جنب index.html.")) return;
   let token = "";
@@ -2396,7 +2488,7 @@ async function runPushCheck() {
   if (r.status === 404) { step(false, "السيرفر /api/notify", "الملف api/notify.js مش مرفوع على Vercel (404). ارفعه مع package.json وسوّي Redeploy."); return; }
   if (!r.ok) { step(false, "السيرفر /api/notify", ("خطأ " + r.status + ": " + (j.code || j.error || "") + " " + (j.detail || "")).trim() + (String(j.code || "").startsWith("env") ? " — راجع متغير FIREBASE_SERVICE_ACCOUNT في Vercel وسوّي Redeploy." : "")); return; }
   if (!step(j.sent > 0, "السيرفر بعت إشعار تجريبي", j.sent > 0 ? "اتبعت لـ " + j.sent + " جهاز. لازم يظهرلك إشعار دلوقتي." : "التوكنز: " + (j.tokens || 0) + "، فشل: " + (j.failed || 0) + " " + (j.codes || []).join(" "))) return;
-  step(true, "كله تمام ✅", "لو الإشعار ظهر يبقى الإعداد سليم. اقفل الموقع وخلّي حد يبعتلك.");
+  step(true, "كله تمام", "لو الإشعار ظهر يبقى الإعداد سليم. اقفل الموقع وخلّي حد يبعتلك.");
 }
 
 /* ---------------- profile view ---------------- */
@@ -2410,7 +2502,7 @@ async function openProfile(uid, opts = {}) {
     <h3>${esc(u.name)}${badge(u, 22)}</h3>
     <div class="un"><bdi>@${esc(u.username || "—")}</bdi></div>
     ${isOfficial(uid) ? `<div class="official-card">${ownerBadge(22)}<div><b>الحساب الرسمي</b><small>ده الحساب الرسمي لصاحب ES Chat Pro</small></div></div>` : ""}
-    <div class="chips">${u.role === "owner" || isOfficial(uid) ? `<span class="chip owner">👑 المالك · حساب رسمي</span>` : ""}<span class="chip">${genderText(u.gender)}</span>${u.banned ? `<span class="tag-ban">موقوف</span>` : ""}</div>
+    <div class="chips">${u.role === "owner" || isOfficial(uid) ? `<span class="chip owner">${CROWN} المالك · حساب رسمي</span>` : ""}<span class="chip">${genderText(u.gender)}</span>${u.banned ? `<span class="tag-ban">موقوف</span>` : ""}</div>
     ${u.bio ? `<div class="bio">${esc(u.bio)}</div>` : ""}
     ${own ? `<div class="kv"><div>الإيميل<span>${esc(u.email || "—")}</span></div><div>آخر دخول<span>${esc(fmtDT(u.lastLogin))}</span></div><div>مرات الدخول<span>${u.loginCount || 0}</span></div><div>تاريخ التسجيل<span>${esc(fmtDT(u.createdAt))}</span></div><div>UID<span>${esc(uid)}</span></div></div>` : ""}
     <div class="actions">
