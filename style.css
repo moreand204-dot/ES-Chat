@@ -692,3 +692,27 @@ button>.ico{margin:auto}
 .settings-row-arrow{display:grid;place-items:center;color:var(--muted)}
 .stk-fav,.stk-clock{display:inline-flex;align-items:center}
 .chip.owner svg{width:14px;height:14px;vertical-align:-2px;margin-inline-end:3px}
+
+/* ---------- الوسائط على الجهاز + البيانات والتخزين (v42c) ---------- */
+.mph{position:relative;display:grid;place-items:center;width:240px;max-width:100%;border-radius:14px;overflow:hidden;background:#0b1633;cursor:pointer;isolation:isolate}
+.mph::before{content:"";position:absolute;inset:-10px;background:var(--t,none) center/cover;filter:blur(9px);opacity:.9;z-index:-1}
+.mdl{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border-radius:999px;background:rgba(5,10,25,.72);backdrop-filter:blur(6px);color:#eaf1ff;font-size:13px;font-weight:700}
+.busy .mdl svg,.busy .vp-btn svg,.busy.mfile svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.fail .mdl-t{color:#ff9bb0}
+.vp-off{cursor:pointer}.vp-off .vp-btn{display:grid;place-items:center}
+.mfile-off{width:100%;text-align:inherit;font:inherit;color:inherit;background:transparent;border:1px solid rgba(255,255,255,.1);cursor:pointer}
+.donut-wrap{display:grid;place-items:center;margin:8px 0 4px}.donut{width:170px;height:170px}
+.donut .d-n{fill:#fff;font-size:17px;font-weight:800;font-family:inherit}.donut .d-s{fill:#8ea2c7;font-size:8px;font-family:inherit}
+.st-list{display:grid;gap:2px;margin:6px 0}
+.st-row{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.03)}
+.st-row i{width:12px;height:12px;border-radius:50%;flex:0 0 auto}.st-row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-row b{color:#8ea2c7;font-weight:600;font-size:13px}.st-row em{font-style:normal;color:#cfe0ff;font-size:13px;min-width:64px;text-align:end}
+.st-x{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;border:0;background:rgba(255,90,120,.12);color:#ff8fa5;cursor:pointer}
+.hint.warn{display:flex;gap:8px;align-items:flex-start}.hint.warn svg{flex:0 0 auto;margin-top:2px;color:#f0883e}
+.ad-block{padding:2px 0 10px;border-bottom:1px solid rgba(255,255,255,.06)}
+.ad-lim{display:flex;justify-content:space-between;align-items:center;padding:4px 14px 0;color:#8ea2c7;font-size:13px}.ad-lim b{color:#cfe0ff}
+.ad-range{width:calc(100% - 28px);margin:8px 14px 4px;accent-color:var(--blue,#3b82f6)}
+
+#stKeep{grid-template-columns:repeat(4,1fr)}
+#stKeep button{padding-inline:6px;font-size:13px}

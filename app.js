@@ -6,6 +6,7 @@ import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import * as CFG from "./firebase-config.js";
 import { initE2EEDevice, encryptPrivatePayload, decryptPrivatePayload, encryptSharedPayload, decryptSharedPayload } from "./e2ee.js";
+import { MEDIA_MAX, fmtBytes, netType, splitChunks, joinChunks, sealBytes, openBytes, mPut, mGet, mDel, mList, askPersist, isPersisted, deviceQuota } from "./media.js";
 const { firebaseConfig, OWNER_EMAIL } = CFG;
 const VAPID_KEY = CFG.VAPID_KEY || "";
 window.__esBooted = true; // مراقب الإقلاع في index.html بيعتمد عليها
@@ -96,7 +97,7 @@ const LS = {
   set: (k, v) => { try { localStorage.setItem("es_" + k, JSON.stringify(v)); } catch {} },
 };
 const PREV = new Map(), PVBUSY = new Set();
-const previewOf = p => !p ? "" : p.poll ? "📊 " + p.poll.q : p.img ? "📷 صورة" : p.file ? (String(p.file.type || "").startsWith("audio/") ? "🎤 رسالة صوتية" : "📎 ملف") : p.sticker ? ((p.sticker.emoji || "🎨") + " ملصق") : p.loc ? "📍 موقع" : (p.text || "");
+const previewOf = p => !p ? "" : p.poll ? "📊 " + p.poll.q : p.media ? (p.media.kind === "voice" ? "🎤 رسالة صوتية" : p.media.kind === "img" ? "📷 صورة" : "📎 ملف") : p.img ? "📷 صورة" : p.file ? (String(p.file.type || "").startsWith("audio/") ? "🎤 رسالة صوتية" : "📎 ملف") : p.sticker ? ((p.sticker.emoji || "🎨") + " ملصق") : p.loc ? "📍 موقع" : (p.text || "");
 const lastMsOf = c => (toDate(c.lastAt) || { getTime: () => 0 }).getTime();
 function dmPrev(c) {
   const t = String(c.lastText || ""); if (!t.startsWith("🔒")) return t;
@@ -204,7 +205,10 @@ const IC = {
   refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.3-5.4M19.5 4.5v4h-4"/>',
   battery: '<rect x="3" y="8" width="16" height="9" rx="2.2"/><path d="M21.5 11v3M7 12.5h6"/>',
   text: '<path d="M4 18 9 6l5 12M5.8 14h6.4M15.5 18l2.5-6 2.5 6M16.4 16.2h3.2"/>',
-  more: '<circle cx="12" cy="5.5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="18.5" r="1.5"/>'
+  more: '<circle cx="12" cy="5.5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="18.5" r="1.5"/>',
+  pie: '<path d="M12 3.5v8.5h8.5A8.5 8.5 0 1 1 12 3.5z"/><path d="M15 3.8A8.5 8.5 0 0 1 20.2 9H15z"/>',
+  signal: '<path d="M5 19v-3M10 19v-6M15 19V9M20 19V5"/>',
+  wifi: '<path d="M3 9.5a13 13 0 0 1 18 0M6 13a8.5 8.5 0 0 1 12 0M9.2 16.4a4 4 0 0 1 5.6 0"/><path d="M12 19.5h.01"/>'
 };
 const ic = (n, s = 22, cls = "") => `<svg class="ico ${cls}" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[n] || ""}</svg>`;
 document.querySelectorAll("[data-ic]").forEach(el => { el.innerHTML = ic(el.dataset.ic, +el.dataset.s || 22); });
@@ -506,7 +510,7 @@ async function onAuth(user) {
       setDoc(doc(db, "users", user.uid, "private", "account"), { uid: user.uid, email: user.email || "" }, { merge: true }).catch(() => {});
       if (owner && (!d.verified || d.role !== "owner")) updateDoc(ref, { verified: true, role: "owner" }).catch(() => {});
     }
-    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); syncPublicProfile(user.uid); route(); }, e => fail(e));
+    S.unsub.me = onSnapshot(ref, s => { S.me = s.data(); syncPublicProfile(user.uid); if (!S._sw) { S._sw = 1; localSweep(); } route(); }, e => fail(e));
   } catch (e) {
     await fail(e);
   }
@@ -791,7 +795,7 @@ const ACCENTS = [["blue", "#2f6bff", "أزرق"], ["violet", "#8b5cf6", "بنف�
 const WALLS = [["dots", "نقط"], ["grid", "شبكة"], ["none", "سادة"]];
 function applyTheme() { const r = document.documentElement; r.dataset.accent = LS.get("accent", "blue"); r.dataset.wp = LS.get("wp", "dots"); r.dataset.fs = LS.get("fs", "m"); r.dataset.dens = LS.get("dens", "n"); r.dataset.motion = LS.get("motion", true) ? "on" : "off"; }
 applyTheme();
-const ROW_IC = { privacyCalls: "phone", privacyContacts: "block", privacyLock: "lock", privacyAdvanced: "sliders", privacyCheckup: "shield", folders: "folder", quick: "bolt", stars: "star", chatMedia: "image", drafts: "edit", account: "user", privacy: "shield", devices: "device", chats: "chat", notifications: "bell", appearance: "palette", language: "globe", data: "database", power: "battery", about: "info" };
+const ROW_IC = { privacyCalls: "phone", privacyContacts: "block", privacyLock: "lock", privacyAdvanced: "sliders", privacyCheckup: "shield", folders: "folder", quick: "bolt", stars: "star", chatMedia: "image", drafts: "edit", account: "user", privacy: "shield", devices: "device", chats: "chat", notifications: "bell", appearance: "palette", language: "globe", data: "database", power: "battery", about: "info", storage: "pie", adMobile: "signal", adWifi: "wifi" };
 const settingsRow = (id, icon, title, sub = "") => `<button type="button" class="settings-row" data-settings="${id}"><span class="settings-row-icon">${ic(ROW_IC[id] || "sliders", 22)}</span><span class="settings-row-copy"><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="settings-row-arrow">${ic("chev", 18)}</span></button>`;
 function settingsPage(title, sub, html) {
   return openModal(`<div class="settings-page-head"><div class="settings-kicker">ES CHAT PRO · CONTROL CENTER</div><h2>${title}</h2><p>${sub}</p></div>${html}`, false, true);
@@ -826,13 +830,13 @@ function openSettingsSection(id) {
   if (id === "chats") {
     const sh = settingsPage("إعدادات المحادثات", "تحكم في شكل الرسائل والوسائط والأدوات اليومية.", `${switchRow("cLinks",LS.get("lcards",true),"معاينة الروابط","عرض بطاقة مختصرة عند إرسال رابط ES Chat Pro")}${switchRow("cDense",LS.get("dens","n")==="c","الوضع المدمج","مسافات أصغر لعرض رسائل أكثر")}${switchRow("cMotion",LS.get("motion",true),"الحركات والانتقالات","إيقافها للأجهزة البطيئة")}${switchRow("c24",LS.get("h24",false),"تنسيق 24 ساعة","عرض الوقت بصيغة 24 ساعة")}${switchRow("cEnter",LS.get("send_enter",false),"الإرسال بزر Enter","استخدم Shift+Enter لسطر جديد عند التفعيل")}${settingsRow("folders","▣","مجلدات الدردشة",`${S.prefs.labels.length} مجلد`)}${settingsRow("quick","↯","الردود السريعة",`${S.prefs.quick.length} اختصار`)}${settingsRow("stars","★","الرسائل المميزة",`${S.prefs.stars.length} رسالة`)}${settingsRow("chatMedia","▧","الوسائط والتنزيل","التنزيل التلقائي وحفظ الوسائط")}${settingsRow("drafts","◌","المسودات","إدارة المسودات المحلية لكل محادثة")}`); const q=x=>sh.querySelector(x); q("#cLinks").onchange=e=>{LS.set("lcards",e.target.checked);if(S.chat?.lastDocs)renderMsgs(S.chat.lastDocs);};q("#cDense").onchange=e=>{LS.set("dens",e.target.checked?"c":"n");applyTheme();};q("#cMotion").onchange=e=>{LS.set("motion",e.target.checked);applyTheme();};q("#c24").onchange=e=>{LS.set("h24",e.target.checked);if(S.chat?.lastDocs)renderMsgs(S.chat.lastDocs);};q("#cEnter").onchange=e=>LS.set("send_enter",e.target.checked);sh.querySelectorAll("[data-settings]").forEach(b=>b.onclick=()=>({folders:manageLabels,quick:manageQuick,stars:openStars,chatMedia:()=>openSettingsSection("chatMedia"),drafts:()=>openSettingsSection("drafts")}[b.dataset.settings]?.()));return sh;
   }
-  if (id === "chatMedia") { const sh=settingsPage("الوسائط والتنزيل","تحكم في طريقة التعامل مع الصور والملفات على هذا الجهاز.",`${switchRow("cmImages",LS.get("auto_images",true),"تنزيل الصور تلقائيًا","السماح بتحميل الصور عند عرضها")}${switchRow("cmFiles",LS.get("auto_files",false),"تنزيل الملفات تلقائيًا","لا يُنصح به على باقات الإنترنت المحدودة")}${switchRow("cmGallery",LS.get("save_gallery",false),"حفظ الوسائط محليًا","حفظ نسخة محلية عند استخدام زر الحفظ")}${switchRow("cmQuality",LS.get("high_media",false),"جودة وسائط أعلى","تستهلك مساحة ونطاقًا أكبر")}`);["cmImages","cmFiles","cmGallery","cmQuality"].forEach((id,i)=>sh.querySelector("#"+id).onchange=e=>LS.set(["auto_images","auto_files","save_gallery","high_media"][i],e.target.checked));return sh; }
+  if (id === "chatMedia" || id === "data") return dataPage();
+  if (id === "storage") return storagePage();
+  if (id === "adMobile") return adPage("mobile");
+  if (id === "adWifi") return adPage("wifi");
   if (id === "drafts") { const ks=Object.keys(localStorage).filter(k=>k.startsWith("es_draft_"));const sh=settingsPage("المسودات","المسودات محفوظة محليًا لكل محادثة ولا تُرسل إلى الخادم.",`<div class="stats"><div class="stat"><b>${ks.length}</b><span>مسودة محفوظة</span></div></div><div class="actions"><button class="btn-danger" id="clearDrafts">مسح كل المسودات</button></div>`);sh.querySelector("#clearDrafts").onclick=()=>{if(!confirm("مسح كل المسودات من هذا الجهاز؟"))return;ks.forEach(k=>localStorage.removeItem(k));toast("تم مسح المسودات");openSettingsSection("drafts");};return sh; }
   if (id === "appearance") {
     const sh = settingsPage("المظهر", "خصص ألوان ES Chat Pro وخلفية الرسائل وحجم الخط.", `<div class="panel-h">اللون الرئيسي</div><div class="swatches">${ACCENTS.map(([k,c,t])=>`<button type="button" class="sw big ${LS.get("accent","blue")==k?"on":""}" data-acc="${k}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div><div class="panel-h">خلفية الرسائل</div><div class="seg3">${WALLS.map(([k,t])=>`<button type="button" class="${LS.get("wp","dots")==k?"on":""}" data-wp="${k}">${t}</button>`).join("")}</div><div class="panel-h">حجم الخط</div><div class="seg3">${[["s","صغير"],["m","متوسط"],["l","كبير"]].map(([k,t])=>`<button type="button" class="${LS.get("fs","m")==k?"on":""}" data-fs="${k}">${t}</button>`).join("")}</div>`);sh.querySelectorAll("[data-acc]").forEach(b=>b.onclick=()=>{LS.set("accent",b.dataset.acc);applyTheme();sh.querySelectorAll("[data-acc]").forEach(x=>x.classList.toggle("on",x===b));});sh.querySelectorAll("[data-wp]").forEach(b=>b.onclick=()=>{LS.set("wp",b.dataset.wp);applyTheme();sh.querySelectorAll("[data-wp]").forEach(x=>x.classList.toggle("on",x===b));});sh.querySelectorAll("[data-fs]").forEach(b=>b.onclick=()=>{LS.set("fs",b.dataset.fs);applyTheme();sh.querySelectorAll("[data-fs]").forEach(x=>x.classList.toggle("on",x===b));});return sh;
-  }
-  if (id === "data") {
-    const keys=Object.keys(localStorage).filter(k=>k.startsWith("es_")), bytes=keys.reduce((n,k)=>n+(localStorage.getItem(k)||"").length*2,0); const sh=settingsPage("البيانات والتخزين","إدارة البيانات المحلية دون المساس برسائلك المشفرة على Firebase.",`<div class="stats"><div class="stat"><b>${keys.length}</b><span>عناصر محلية</span></div><div class="stat"><b>${Math.ceil(bytes/1024)} KB</b><span>حجم التخزين التقريبي</span></div></div><div class="panel-h">إدارة الذاكرة المحلية</div><div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="dDraft">مسح المسودات</button><button class="btn-ghost" id="dStick">مسح الملصقات الشخصية</button><button class="btn-danger" id="dAll">مسح كل إعدادات الجهاز</button></div><p class="hint">لا يتم حذف رسائلك من Firestore بهذه الأزرار. مسح إعدادات الجهاز قد يعيد تفضيلاتك للوضع الافتراضي.</p>`);sh.querySelector("#dDraft").onclick=()=>{Object.keys(localStorage).filter(k=>k.startsWith("es_draft_")).forEach(k=>localStorage.removeItem(k));toast("تم مسح المسودات");};sh.querySelector("#dStick").onclick=()=>{LS.set("custom_stickers",[]);LS.set("sticker_favs",[]);toast("تم مسح الملصقات المحلية");};sh.querySelector("#dAll").onclick=()=>{if(!confirm("مسح إعدادات هذا الجهاز فقط؟"))return;Object.keys(localStorage).filter(k=>k.startsWith("es_")).forEach(k=>localStorage.removeItem(k));toast("تم مسح إعدادات الجهاز");setTimeout(()=>location.reload(),500);};return sh;
   }
   if (id === "devices") { const did=LS.get("device_label","")||((navigator.userAgent.match(/Android|iPhone|iPad/i)||["جهاز متصفح"])[0]+" · "+Math.random().toString(36).slice(2,7));LS.set("device_label",did);return settingsPage("الأجهزة النشطة","هذا الجهاز هو جلسة التشفير الحالية. لا نعرض أجهزة أخرى إلا إذا كانت مسجلة بمفاتيحها.",`<div class="device-card"><b>هذا الجهاز</b><span>${esc(did)}</span><small>المتصفح: ${esc(navigator.userAgent.slice(0,90))}</small><i>مفتاح E2EE محلي</i></div><div class="privacy-note"><b>خصوصية الأجهزة</b><span>تسجيل الخروج يلغي الجلسة الحالية، ولا يرسل مفاتيحك الخاصة إلى الخادم.</span></div>`); }
   if (id === "language") { const sh=settingsPage("اللغة","اختر لغة واجهة ES Chat Pro. سيتم حفظ الاختيار على الحساب والجهاز.",`<div class="seg3"><button type="button" id="langAr" class="${me.lang!=="en"?"on":""}">العربية</button><button type="button" id="langEn" class="${me.lang==="en"?"on":""}">English</button></div><p class="hint">الرسائل التي تحتوي على textAr وtextEn ستظهر باللغة المختارة.</p>`);const set=async lang=>{try{await updateDoc(doc(db,"users",S.user.uid),{lang});await updateDoc(doc(db,"users",S.user.uid,"public","profile"),{lang});S.me.lang=lang;LS.set("lang",lang);toast(lang==="en"?"English selected":"تم اختيار العربية");sh.querySelectorAll(".seg3 button").forEach(x=>x.classList.toggle("on",x.id===(lang==="en"?"langEn":"langAr")));}catch{toast("تعذّر حفظ اللغة");}};sh.querySelector("#langAr").onclick=()=>set("ar");sh.querySelector("#langEn").onclick=()=>set("en");return sh; }
@@ -1330,7 +1334,7 @@ async function renderMsgs(docs) {
       }
       catch { return { id: d.id, data: () => ({ ...raw, text: "🔒 رسالة مشفّرة — لا يمكن فكها بهذا الجهاز" }) }; }
     }));
-    if (S.chat === c) renderMsgsPlain(decoded);
+    if (S.chat === c) { renderMsgsPlain(decoded); hydrateMedia(); if (!c._swept) { c._swept = 1; sweepRelay(c.id); } }
     return;
   }
   renderMsgsPlain(docs);
@@ -1375,6 +1379,7 @@ function renderMsgsPlain(docs) {
       if (m.topicId) body += `<div class="msg-topic"># موضوع المجموعة</div>`;
       if (m.fwd) body += `<div class="fwd">معاد توجيهها</div>`;
       if (m.reply) body += `<div class="quote" data-q="${esc(m.reply.id)}"><b>${esc(nameOf(m.reply.uid))}</b><span>${esc(m.reply.t)}</span></div>`;
+      if (m.media && m.media.id) body += mediaHtml(m.media, c.id);
       if (m.img && String(m.img).startsWith("data:image/")) body += `<img class="mimg" src="${esc(m.img)}" alt="صورة" data-img>`;
       if (m.file && m.file.data && String(m.file.type || "").startsWith("audio/")) body += voiceHtml(m.file);
       else if (m.file && m.file.data) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="data:${esc(m.file.type || "application/octet-stream")};base64,${esc(m.file.data)}">${ic("file", 22)}<span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
@@ -1573,7 +1578,7 @@ function openMsgMenu(mid) {
       const stars = starred ? S.prefs.stars.filter(s => !(s.c === c.id && s.m === mid)) : [...S.prefs.stars, { c: c.id, m: mid, t: prev, u: m.uid, a: toDate(m.at)?.getTime() || Date.now() }].slice(-100);
       savePrefs({ stars }); renderMsgs(c.lastDocs); toast(starred ? "اتشالت النجمة" : "اتميزت بنجمة");
     }
-    else if (a === "fwd") openForward({ ...(m.text ? { text: m.text } : {}), ...(m.img ? { img: m.img } : {}), ...(m.loc ? { loc: m.loc } : {}), ...(m.poll ? { poll: m.poll } : {}) });
+    else if (a === "fwd") m.media ? toast("إعادة توجيه الوسائط المحفوظة على الجهاز غير متاحة حاليًا") : openForward({ ...(m.text ? { text: m.text } : {}), ...(m.img ? { img: m.img } : {}), ...(m.loc ? { loc: m.loc } : {}), ...(m.poll ? { poll: m.poll } : {}) });
     else if (a === "hide") { const k = "hid_" + c.id, l = LS.get(k, []); l.push(mid); LS.set(k, l.slice(-500)); renderMsgs(c.lastDocs); }
     else if (a === "del") {
       if (!confirm(c.type === "dm" ? "تحذف الرسالة عند الطرفين؟" : "تحذف الرسالة للجميع؟")) return;
@@ -1610,6 +1615,7 @@ $("#messages").addEventListener("click", e => {
   const pm = e.target.closest("[data-pm]"); if (pm) { const mm = pm.closest("[data-mid]"); if (mm) openMsgMenu(mm.dataset.mid); return; }
   const rc = e.target.closest("[data-re]"); if (rc) { const mm = rc.closest("[data-mid]"); if (mm) reactTo(mm.dataset.mid, rc.dataset.re); return; }
   const q = e.target.closest("[data-q]"); if (q) return jumpTo(q.dataset.q);
+  const dl = e.target.closest("[data-dl]"); if (dl) { MFAIL.delete(dl.dataset.dl); mediaFetch(dl.dataset.dl).catch(() => {}); return; }
   const im = e.target.closest("[data-img]"); if (im) return viewImage(im.src);
 });
 let mT, mFired = false, mX = 0, mY = 0;
@@ -1666,10 +1672,10 @@ function openChatSearch() {
     if (!t && !from && flt === "all") { out.innerHTML = `<div class="empty-list">بيبحث في ${c.lastDocs?.length || 0} رسالة محمّلة على جهازك.</div>`; return; }
     const hits = (c.lastDocs || []).filter(d => {
       const m = d.data(); if (m.deleted) return false;
-      if (flt === "img" && !m.img) return false;
+      if (flt === "img" && !(m.img || (m.media && m.media.kind === "img"))) return false;
       if (flt === "loc" && !m.loc) return false;
-      if (flt === "audio" && !(m.file && String(m.file.type || "").startsWith("audio/"))) return false;
-      if (flt === "file" && !(m.file && !String(m.file.type || "").startsWith("audio/"))) return false;
+      if (flt === "audio" && !((m.file && String(m.file.type || "").startsWith("audio/")) || (m.media && m.media.kind === "voice"))) return false;
+      if (flt === "file" && !((m.file && !String(m.file.type || "").startsWith("audio/")) || (m.media && m.media.kind === "file"))) return false;
       if (flt === "link" && !/https?:\/\/|www\./i.test(m.text || "")) return false;
       if (from && !nameOf(m.uid).toLowerCase().includes(from)) return false;
       return !t || ((m.text || "") + " " + (m.poll ? m.poll.q : "")).toLowerCase().includes(t);
@@ -1763,10 +1769,10 @@ function siteGate(c, payload) {
   const st = S.site || {}, deny = t => { toast(t); throw new Error("blocked"); };
   if (isOwner()) return;
   if (st.readOnly === true) deny("الموقع في وضع القراءة فقط حاليًا");
-  if (payload.img && st.allowImages === false) deny("إرسال الصور متوقف حاليًا");
+  if ((payload.img || (payload.media && payload.media.kind === "img")) && st.allowImages === false) deny("إرسال الصور متوقف حاليًا");
   if (payload.loc && st.allowLoc === false) deny("إرسال المواقع متوقف حاليًا");
   if (payload.poll && st.allowPolls === false) deny("الاستفتاءات متوقفة حاليًا");
-  if (payload.file && st.allowFiles === false) deny("إرسال الملفات متوقف حاليًا");
+  if ((payload.file || (payload.media && payload.media.kind !== "img" && payload.media.kind !== "voice")) && st.allowFiles === false) deny("إرسال الملفات متوقف حاليًا");
   if (payload.text) {
     const lim = Math.min(2000, +st.maxLen || 2000);
     if (payload.text.length > lim) deny("أقصى طول للرسالة " + lim + " حرف");
@@ -1800,7 +1806,7 @@ async function sendTo(c, payload) {
   const meta = S.chats.find(x => x.id === c.id), ttl = c.peer ? ((S.chat && S.chat.id === c.id && S.chat.doc ? S.chat.doc.ttl : meta && meta.ttl) || 0) : 0;
   let data = { uid: S.user.uid, at: serverTimestamp(), ...payload };
   let encryptedPrivate = false;
-  if (c.peer && (payload.text || payload.img || payload.file || payload.loc || payload.poll || payload.sticker)) {
+  if (c.peer && (payload.text || payload.img || payload.file || payload.media || payload.loc || payload.poll || payload.sticker)) {
     const bundle = await getPeerCrypto(c.peer);
     if (!bundle) { toast("مفتاح التشفير للطرف الآخر غير جاهز. افتح الموقع من الجهاز الآخر مرة واحدة ثم جرّب."); throw new Error("peer-crypto-missing"); }
     const cipher = await encryptPrivatePayload(S.user.uid, bundle, payload);
@@ -1875,17 +1881,177 @@ function compressImage(file, max = 960, q = 0.72) {
     img.onerror = () => rej(new Error("bad image")); img.src = url;
   });
 }
+function imgToBlob(file, max = 1600, q = 0.82) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), cv = document.createElement("canvas"); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k); cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url); cv.toBlob(b => b ? res({ blob: b, w: cv.width, h: cv.height }) : rej(new Error("bad image")), "image/jpeg", q); };
+    img.onerror = () => rej(new Error("bad image")); img.src = url;
+  });
+}
 async function sendImage(file) {
   if (!file || !S.chat) return; const c = S.chat;
-  try { toast("جاري إرسال الصورة..."); const img = await compressImage(file, c.peer ? 640 : 960, c.peer ? 0.56 : 0.72); if (c.peer && img.length > 260000) throw new Error("private-image-too-large"); await sendTo(c, { img }); }
-  catch (e) { if (e.message !== "blocked") toast("الصورة ماتبعتتش"); }
+  try {
+    toast("جاري إرسال الصورة...");
+    if (c.peer) { const { blob, w, h } = await imgToBlob(file), thumb = await compressImage(file, 28, 0.5); await relaySend(c, blob, { kind: "img", name: "photo.jpg", type: "image/jpeg", w, h, thumb }); return; }
+    const img = await compressImage(file, 960, 0.72); await sendTo(c, { img });
+  } catch (e) { if (e.message !== "blocked") toast("الصورة ماتبعتتش"); }
 }
 async function sendFile(file) {
   if (!file || !S.chat) return;
-  if (!S.chat.peer) return toast("تشفير الملفات متاح حاليًا في المحادثات الخاصة فقط");
-  if (file.size > 180 * 1024) return toast("الملف المشفر في هذه المرحلة حدّه 180 KB");
-  try { const raw = new Uint8Array(await file.arrayBuffer()); const data = btoa(String.fromCharCode(...raw)); await sendTo(S.chat, { file: { name: file.name.slice(0, 120), type: file.type || "application/octet-stream", bytes: file.size, data } }); toast("اتبعث الملف مشفّر"); }
-  catch { toast("الملف ماتبعتش"); }
+  if (!S.chat.peer) return toast("إرسال الملفات متاح حاليًا في المحادثات الخاصة فقط");
+  if (file.size > MEDIA_MAX) return toast("الملف أكبر من " + fmtBytes(MEDIA_MAX));
+  try { toast("جاري رفع الملف..."); await relaySend(S.chat, file, { kind: "file", name: file.name.slice(0, 120), type: file.type || "application/octet-stream" }); toast("اتبعث الملف مشفّر"); }
+  catch (e) { if (e.message !== "blocked") toast("الملف ماتبعتش"); }
+}
+/* ================= الوسائط على جهاز المستخدم =================
+ * المرسل: يشفّر الملف ويرفعه أجزاء مؤقتة على Firebase، ويحتفظ بنسخته على جهازه.
+ * المستلم: ينزّل الأجزاء (تلقائي أو بزر حسب الإعدادات)، يفكها ويحفظها على جهازه، وبعدها النسخة المؤقتة بتتمسح من السيرفر. */
+const MURL = new Map(), MDESC = new Map(), MBUSY = new Map(), MFAIL = new Set();
+const AD_DEF = () => ({ mobile: { img: { on: true, mb: 3 }, voice: { on: true, mb: 3 }, file: { on: false, mb: 2 } }, wifi: { img: { on: true, mb: 15 }, voice: { on: true, mb: 15 }, file: { on: true, mb: 15 } } });
+const adGet = () => { const d = AD_DEF(), s = LS.get("ad", null) || {}; for (const n of ["mobile", "wifi"]) for (const k of ["img", "voice", "file"]) d[n][k] = { ...d[n][k], ...((s[n] || {})[k] || {}) }; return d; };
+const shouldAuto = md => { const p = adGet()[netType()][md.kind === "voice" ? "voice" : md.kind === "img" ? "img" : "file"]; return !!p.on && (+md.bytes || 0) <= p.mb * 1048576; };
+let _persistAsked = false;
+async function relaySend(c, blob, meta) {
+  if (blob.size > MEDIA_MAX) throw new Error("too-big");
+  siteGate(c, { media: { kind: meta.kind } });
+  const id = crypto.randomUUID(), u8 = new Uint8Array(await blob.arrayBuffer()), { ct, k, iv } = await sealBytes(u8), parts = splitChunks(ct);
+  for (let i = 0; i < parts.length; i++) {
+    if (parts.length > 1) toast(`جاري الرفع ${i + 1}/${parts.length}`);
+    await setDoc(doc(db, "chats", c.id, "blobs", id + "_" + i), { uid: S.user.uid, at: serverTimestamp(), mid: id, i, d: parts[i] });
+  }
+  await mPut({ id, chat: c.id, kind: meta.kind, name: meta.name, type: meta.type, bytes: blob.size, at: Date.now(), blob, mine: true });
+  MURL.set(id, URL.createObjectURL(blob));
+  if (!_persistAsked) { _persistAsked = true; askPersist(); }
+  await sendTo(c, { media: { id, n: parts.length, k, iv, ...meta, bytes: blob.size } });
+}
+const mediaWave = md => vpBars(md.wf, +md.bytes || 7);
+function voiceBlobHtml(md, url) {
+  const dur = Math.min(600, Math.max(0, +md.dur || 0));
+  return `<div class="vp" data-vp data-media="${esc(md.id)}" data-src="${esc(url)}" data-dur="${dur}" data-k="${esc(md.id)}"><button type="button" class="vp-btn" aria-label="تشغيل">${ic("play", 22)}</button><div class="vp-body"><div class="vp-wave">${mediaWave(md)}</div><div class="vp-time">${dur ? fmtDur(dur) : "0:00"}</div></div></div>`;
+}
+function mediaHtml(md, chatId) {
+  if (!md || !md.id) return "";
+  MDESC.set(md.id, { ...md, chat: chatId });
+  const id = esc(md.id), url = MURL.get(md.id), size = fmtBytes(md.bytes), fail = MFAIL.has(md.id);
+  const state = `${fail ? " fail" : ""}`, label = fail ? "غير متاح — اضغط للمحاولة" : size;
+  if (md.kind === "img") {
+    if (url) return `<img class="mimg" src="${esc(url)}" alt="صورة" data-img data-media="${id}">`;
+    const th = md.thumb && /^data:image\//.test(md.thumb) ? `--t:url(${md.thumb});` : "";
+    return `<div class="mph${state}" data-media="${id}" data-dl="${id}" style="${th}aspect-ratio:${+md.w || 4}/${+md.h || 3}"><span class="mdl">${ic("download", 22)}<span class="mdl-t">${label}</span></span></div>`;
+  }
+  if (md.kind === "voice") {
+    if (url) return voiceBlobHtml(md, url);
+    const dur = Math.min(600, Math.max(0, +md.dur || 0));
+    return `<div class="vp vp-off${state}" data-media="${id}" data-dl="${id}"><span class="vp-btn">${ic("download", 22)}</span><div class="vp-body"><div class="vp-wave">${mediaWave(md)}</div><div class="vp-time mdl-t">${dur ? fmtDur(dur) + " · " : ""}${label}</div></div></div>`;
+  }
+  if (url) return `<a class="mfile" data-media="${id}" download="${esc(md.name || "file")}" href="${esc(url)}">${ic("file", 22)}<span>${esc(md.name || "ملف")}</span><small>${size}</small></a>`;
+  return `<button type="button" class="mfile mfile-off${state}" data-media="${id}" data-dl="${id}">${ic("download", 22)}<span>${esc(md.name || "ملف")}</span><small class="mdl-t">${label}</small></button>`;
+}
+function swapMedia(id) {
+  const md = MDESC.get(id); if (!md) return;
+  document.querySelectorAll(`#messages [data-media="${id}"]`).forEach(el => { const t = document.createElement("div"); t.innerHTML = mediaHtml(md, md.chat); if (t.firstElementChild) el.replaceWith(t.firstElementChild); });
+}
+function mediaUi(id, cls, text) {
+  document.querySelectorAll(`#messages [data-media="${id}"]`).forEach(el => { el.classList.remove("busy", "fail"); if (cls) el.classList.add(cls); const l = el.querySelector(".mdl-t"); if (l && text) l.textContent = text; });
+}
+function mediaFetch(id) {
+  if (MBUSY.has(id)) return MBUSY.get(id);
+  const md = MDESC.get(id); if (!md) return Promise.reject(new Error("no-desc"));
+  const p = (async () => {
+    mediaUi(id, "busy", "جاري التنزيل...");
+    try {
+      const snap = await getDocs(query(collection(db, "chats", md.chat, "blobs"), where("mid", "==", id)));
+      const parts = snap.docs.map(x => x.data()).sort((a, b) => a.i - b.i);
+      if (!parts.length || parts.length !== md.n || parts.some((x, i) => x.i !== i)) throw Object.assign(new Error("gone"), { gone: true });
+      const u8 = await openBytes(joinChunks(parts.map(x => x.d)), md.k, md.iv), blob = new Blob([u8], { type: md.type || "application/octet-stream" });
+      await mPut({ id, chat: md.chat, kind: md.kind, name: md.name, type: md.type, bytes: blob.size, at: Date.now(), blob });
+      MURL.set(id, URL.createObjectURL(blob)); MFAIL.delete(id); swapMedia(id);
+      if (!_persistAsked) { _persistAsked = true; askPersist(); }
+      /* Firebase مجرد وسيط: بعد ما الملف اتحفظ على جهاز المستلم بنمسح النسخة المؤقتة */
+      if (snap.docs.some(x => x.data().uid !== S.user.uid)) { const b = writeBatch(db); snap.docs.forEach(x => b.delete(x.ref)); b.commit().catch(() => {}); }
+    } catch (e) { MFAIL.add(id); mediaUi(id, "fail", e.gone ? "الملف مش متاح (اتنزّل على جهاز تاني أو انتهت صلاحيته)" : "فشل التنزيل — اضغط للمحاولة"); throw e; }
+    finally { MBUSY.delete(id); }
+  })();
+  MBUSY.set(id, p); p.catch(() => {}); return p;
+}
+async function hydrateMedia() {
+  const ids = [...new Set([...document.querySelectorAll("#messages [data-media]")].map(e => e.dataset.media))];
+  for (const id of ids) {
+    if (MURL.has(id)) continue;
+    try { const rec = await mGet(id); if (rec && rec.blob) { MURL.set(id, URL.createObjectURL(rec.blob)); swapMedia(id); continue; } } catch {}
+    const md = MDESC.get(id); if (md && !MFAIL.has(id) && !MBUSY.has(id) && shouldAuto(md)) mediaFetch(id).catch(() => {});
+  }
+}
+async function mediaPurge(pred) { const l = (await mList()).filter(pred || (() => true)); for (const x of l) { await mDel(x.id); const u = MURL.get(x.id); if (u) { URL.revokeObjectURL(u); MURL.delete(x.id); } } return l.length; }
+async function localSweep() { const d = LS.get("keep_days", 0); if (!d) return; try { await mediaPurge(x => x.at && x.at < Date.now() - d * 864e5); } catch {} }
+async function sweepRelay(chatId) {
+  try {
+    const s = await getDocs(query(collection(db, "chats", chatId, "blobs"), where("uid", "==", S.user.uid), limit(60))), cut = Date.now() - 30 * 864e5;
+    const old = s.docs.filter(x => { const a = toDate(x.data().at); return a && a.getTime() < cut; });
+    if (old.length) { const b = writeBatch(db); old.forEach(x => b.delete(x.ref)); await b.commit(); }
+  } catch {}
+}
+/* ---------- شاشات الإعدادات: البيانات والتخزين (على نمط تليجرام) ---------- */
+const ST_K = [["img", "الصور", "#3fb950"], ["voice", "الرسائل الصوتية", "#a371f7"], ["file", "الملفات", "#f0883e"]];
+function donutSvg(parts, label) {
+  const tot = parts.reduce((n, p) => n + p.v, 0), R = 52, C = 2 * Math.PI * R; let off = 0;
+  const arcs = tot ? parts.filter(p => p.v > 0).map(p => { const len = p.v / tot * C, vis = Math.max(0, len - 2), el = `<circle cx="70" cy="70" r="${R}" fill="none" stroke="${p.c}" stroke-width="16" stroke-dasharray="${vis.toFixed(2)} ${(C - vis).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 70 70)"/>`; off += len; return el; }).join("") : "";
+  return `<svg viewBox="0 0 140 140" class="donut" role="img"><circle cx="70" cy="70" r="${R}" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="16"/>${arcs}<text x="70" y="69" text-anchor="middle" class="d-n">${label}</text><text x="70" y="87" text-anchor="middle" class="d-s">على جهازك</text></svg>`;
+}
+function bindSettingsRows(sh) { sh.querySelectorAll("[data-settings]").forEach(b => b.onclick = () => openSettingsSection(b.dataset.settings)); }
+function dataPage() {
+  const ad = adGet(), nm = { img: "الصور", voice: "الصوتيات", file: "الملفات" };
+  const sum = n => { const on = ["img", "voice", "file"].filter(k => ad[n][k].on); return on.length ? on.map(k => nm[k] + " (حتى " + ad[n][k].mb + " MB)").join("، ") : "معطّل"; };
+  const sh = settingsPage("البيانات والتخزين", "الوسائط بتتحفظ على جهازك إنت، وFirebase مجرد وسيط بيوصّلها للطرف التاني وبيمسح نسخته بعد التنزيل.",
+    `<div class="panel-h">استخدام التخزين</div>${settingsRow("storage", "", "استخدام التخزين", '<span id="dUse">جاري الحساب...</span>')}
+    <div class="panel-h">تنزيل الوسائط تلقائيًا</div>${settingsRow("adMobile", "", "عند استخدام بيانات الجوال", sum("mobile"))}${settingsRow("adWifi", "", "عند الاتصال بالواي فاي", sum("wifi"))}
+    <div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="adReset">إعادة تعيين إعدادات التنزيل التلقائي</button></div>
+    <p class="hint">لو التنزيل التلقائي مقفول لنوع معين، هيظهرلك زر تنزيل على الوسيط في المحادثة وإنت اللي تقرر.</p>
+    <div class="panel-h">الحفاظ على الوسائط</div>${switchRow("dPersist", false, "تخزين دائم", "يمنع المتصفح من مسح وسائطك لما مساحة الجهاز تقل")}
+    <div class="panel-h">إدارة الذاكرة المحلية</div><div class="actions" style="justify-content:flex-start"><button class="btn-ghost" id="dDraft">مسح المسودات</button><button class="btn-ghost" id="dStick">مسح الملصقات الشخصية</button><button class="btn-danger" id="dAll">مسح كل إعدادات الجهاز</button></div><p class="hint">لا يتم حذف رسائلك من Firestore بهذه الأزرار. مسح إعدادات الجهاز قد يعيد تفضيلاتك للوضع الافتراضي.</p>`);
+  bindSettingsRows(sh);
+  mList().then(l => { const e = sh.querySelector("#dUse"); if (e) e.textContent = l.length ? fmtBytes(l.reduce((n, x) => n + x.bytes, 0)) + " · " + l.length + " ملف" : "مفيش وسائط محفوظة"; }).catch(() => {});
+  isPersisted().then(v => { const e = sh.querySelector("#dPersist"); if (e && v) { e.checked = true; e.disabled = true; } });
+  sh.querySelector("#dPersist").onchange = async e => { if (!e.target.checked) return; const ok = await askPersist(); if (!ok) { e.target.checked = false; toast("المتصفح رفض التخزين الدائم"); } else { e.target.disabled = true; toast("تم تفعيل التخزين الدائم"); } };
+  sh.querySelector("#adReset").onclick = () => { LS.set("ad", {}); toast("اتعادت الإعدادات الافتراضية"); openSettingsSection("data"); };
+  sh.querySelector("#dDraft").onclick = () => { Object.keys(localStorage).filter(k => k.startsWith("es_draft_")).forEach(k => localStorage.removeItem(k)); toast("تم مسح المسودات"); };
+  sh.querySelector("#dStick").onclick = () => { LS.set("custom_stickers", []); LS.set("sticker_favs", []); toast("تم مسح الملصقات المحلية"); };
+  sh.querySelector("#dAll").onclick = () => { if (!confirm("مسح إعدادات هذا الجهاز فقط؟")) return; Object.keys(localStorage).filter(k => k.startsWith("es_")).forEach(k => localStorage.removeItem(k)); toast("تم مسح إعدادات الجهاز"); setTimeout(() => location.reload(), 500); };
+  return sh;
+}
+function adPage(net) {
+  const ad = adGet()[net], title = net === "mobile" ? "عند استخدام بيانات الجوال" : "عند الاتصال بالواي فاي";
+  const rows = [["img", "الصور", "تنزيل الصور تلقائيًا"], ["voice", "الرسائل الصوتية", "تنزيل التسجيلات الصوتية تلقائيًا"], ["file", "الملفات", "تنزيل المستندات والملفات تلقائيًا"]];
+  const sh = settingsPage(title, "الوسائط اللي بتوصلك في المحادثات الخاصة بتتنزّل لوحدها لو حجمها أقل من الحد اللي تحدده، وغير كده بيظهرلك زر تنزيل.",
+    rows.map(([k, t, s]) => `<div class="ad-block">${switchRow("ad_" + k, ad[k].on, t, s)}<div class="ad-lim"><span>الحد الأقصى للحجم</span><b id="lv_${k}">\u200E${ad[k].mb} MB</b></div><input type="range" class="ad-range" id="ls_${k}" min="1" max="15" step="1" value="${ad[k].mb}"></div>`).join(""));
+  const save = (k, patch) => { const s = LS.get("ad", null) || {}; s[net] = s[net] || {}; s[net][k] = { ...(s[net][k] || {}), ...patch }; LS.set("ad", s); };
+  rows.forEach(([k]) => { sh.querySelector("#ad_" + k).onchange = e => save(k, { on: e.target.checked }); const r = sh.querySelector("#ls_" + k); r.oninput = () => { sh.querySelector("#lv_" + k).textContent = "\u200E" + r.value + " MB"; }; r.onchange = () => save(k, { mb: +r.value }); });
+  return sh;
+}
+function storagePage() {
+  const sh = settingsPage("استخدام التخزين", "الوسائط اللي نزّلتها محفوظة على جهازك إنت. Firebase بيوصّلها بس وبعدين بيمسح نسخته.", `<div id="stBox"><p class="hint">جاري الحساب...</p></div>`);
+  stRender(sh); return sh;
+}
+async function stRender(sh) {
+  const box = sh.querySelector("#stBox"); if (!box) return;
+  let list = []; try { list = await mList(); } catch {}
+  const by = { img: 0, voice: 0, file: 0 }; list.forEach(x => { by[x.kind in by ? x.kind : "file"] += x.bytes; });
+  const tot = by.img + by.voice + by.file, q = await deviceQuota(), chats = {}; list.forEach(x => { chats[x.chat] = (chats[x.chat] || 0) + x.bytes; });
+  const cname = id => { const peer = String(id).split("_").find(u => u !== S.user.uid); return peer ? (nameOf(peer) || peer) : id; };
+  const keep = LS.get("keep_days", 0);
+  box.innerHTML = `<div class="donut-wrap">${donutSvg(ST_K.map(([k, , c]) => ({ v: by[k], c })), fmtBytes(tot))}</div>
+    <p class="hint" style="text-align:center">${q ? `ES Chat Pro يستخدم ${fmtBytes(q.usage)} من مساحة المتصفح المتاحة (${fmtBytes(q.quota)})` : "وسائطك محفوظة على هذا الجهاز"}</p>
+    <div class="st-list">${ST_K.map(([k, t, c]) => `<div class="st-row"><i style="background:${c}"></i><span>${t}</span><b>${tot ? Math.round(by[k] / tot * 100) : 0}%</b><em>${fmtBytes(by[k])}</em></div>`).join("")}</div>
+    <div class="actions"><button class="btn-danger" id="stClear" ${tot ? "" : "disabled"}>مسح كل الوسائط من الجهاز</button></div>
+    <p class="hint warn">${ic("warning", 15)} الوسائط بتتمسح من السيرفر بعد ما تتنزّل، فلو مسحتها من هنا مش هتقدر تنزّلها تاني. الرسائل نفسها بتفضل.</p>
+    <div class="panel-h">الحذف التلقائي للوسائط القديمة</div>
+    <div class="seg3" id="stKeep">${[[0, "للأبد"], [7, "أسبوع"], [30, "شهر"], [90, "٣ شهور"]].map(([d, t]) => `<button type="button" data-d="${d}" class="${keep === d ? "on" : ""}">${t}</button>`).join("")}</div>
+    <div class="panel-h">حسب المحادثة</div>
+    <div class="st-list">${Object.entries(chats).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id, n]) => `<div class="st-row"><i style="background:#58a6ff"></i><span>${esc(cname(id))}</span><em>${fmtBytes(n)}</em><button type="button" class="st-x" data-chat="${esc(id)}" aria-label="مسح">${ic("trash", 16)}</button></div>`).join("") || `<p class="hint">مفيش وسائط محفوظة لسه.</p>`}</div>`;
+  const refresh = () => { if (S.chat?.lastDocs) renderMsgs(S.chat.lastDocs); };
+  box.querySelector("#stClear").onclick = async () => { if (!confirm("مسح كل الوسائط المحفوظة على الجهاز؟ مش هتقدر تنزّلها تاني.")) return; await mediaPurge(); toast("اتمسحت الوسائط من الجهاز"); stRender(sh); refresh(); };
+  box.querySelectorAll("#stKeep button").forEach(b => b.onclick = async () => { LS.set("keep_days", +b.dataset.d); await localSweep(); stRender(sh); refresh(); });
+  box.querySelectorAll("[data-chat]").forEach(b => b.onclick = async () => { await mediaPurge(x => x.chat === b.dataset.chat); toast("اتمسحت وسائط المحادثة"); stRender(sh); refresh(); });
 }
 let voiceRecorder = null, voiceChunks = [], voiceTimer = 0, voiceStarted = 0, voiceTick = 0, voiceCancel = false, voiceWf = [];
 function syncSendMic() {
@@ -1931,9 +2097,11 @@ async function startVoice() {
       const blob = new Blob(voiceChunks, { type }), dur = (Date.now() - voiceStarted) / 1000; voiceChunks = [];
       if (voiceCancel) return;
       if (dur < 0.7) return toast("التسجيل قصير جدًا");
-      if (blob.size > 180 * 1024) return toast("التسجيل أكبر من 180 KB؛ قرّبه أو سجّل مدة أقصر");
+      if (!chat.peer && blob.size > 180 * 1024) return toast("التسجيل أكبر من 180 KB؛ قرّبه أو سجّل مدة أقصر");
       try {
-        const raw = new Uint8Array(await blob.arrayBuffer()), wf = vpDownsample(voiceWf), file = { name: "es-voice.webm", type, bytes: raw.byteLength, data: bytesToB64(raw), dur: Math.round(dur) };
+        const wf = vpDownsample(voiceWf);
+        if (chat.peer) { await relaySend(chat, blob, { kind: "voice", name: "es-voice.webm", type, dur: Math.round(dur), ...(wf ? { wf } : {}) }); toast("اتبعثت الرسالة الصوتية مشفّرة"); return; }
+        const raw = new Uint8Array(await blob.arrayBuffer()), file = { name: "es-voice.webm", type, bytes: raw.byteLength, data: bytesToB64(raw), dur: Math.round(dur) };
         if (wf) file.wf = wf;
         await sendTo(chat, { file }); toast("اتبعثت الرسالة الصوتية مشفّرة");
       } catch (e) { console.error(e); toast("الرسالة الصوتية ماتبعتتش"); }
