@@ -1,6 +1,12 @@
 {
   "name": "es-chat-pro",
   "private": true,
-  "version": "2.0.0",
-  "dependencies": { "firebase-admin": "^12.6.0" }
+  "version": "2.1.0",
+  "dependencies": {
+    "firebase-admin": "^14.5.0"
+  },
+  "scripts": {
+    "test:fuzzer": "node tools/es-fuzzer.mjs",
+    "test:bot-api": "node tools/bot-api.test.js"
+  }
 }

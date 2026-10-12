@@ -716,3 +716,70 @@ button>.ico{margin:auto}
 
 #stKeep{grid-template-columns:repeat(4,1fr)}
 #stKeep button{padding-inline:6px;font-size:13px}
+
+
+/* ES Chat v43 — interaction polish */
+:root { --es-motion-fast: 150ms; --es-motion: 240ms; }
+button, .icon-btn, .icon, .settings-row, .sticker, .emoji-item {
+  -webkit-tap-highlight-color: transparent;
+}
+button:not(:disabled) { transition: transform var(--es-motion-fast) ease, filter var(--es-motion-fast) ease, box-shadow var(--es-motion-fast) ease; }
+button:not(:disabled):active { transform: scale(.965); }
+.btn-primary, .sendmic, .attach, .emoji-btn { position: relative; overflow: hidden; }
+.btn-primary::after, .sendmic::after, .attach::after, .emoji-btn::after {
+  content:""; position:absolute; inset:0; pointer-events:none; opacity:0;
+  background:radial-gradient(circle at center,rgba(255,255,255,.26),transparent 68%);
+  transition:opacity .22s ease;
+}
+button:active::after { opacity:1; }
+.messages .msg { animation: esMessageIn .22s cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom var(--message-origin, right); }
+.messages .msg.out { --message-origin:right; }
+.messages .msg.in { --message-origin:left; }
+.messages .sticker, .sticker { animation: esStickerPop .32s cubic-bezier(.18,1.35,.45,1) both; transform-origin:center; }
+.composer.recording { border-color:rgba(255,75,94,.72)!important; box-shadow:0 0 0 3px rgba(255,75,94,.09),0 0 24px rgba(255,75,94,.12); animation:esRecordPulse 1.4s ease-in-out infinite; }
+.rec-dot { animation:esRecordDot 1s ease-in-out infinite; }
+#sendMic:not(.is-mic) { animation:esSendReady .18s ease-out; }
+#recBar { animation:esPanelIn .18s ease-out; }
+.modal:not(.hidden) .sheet { animation:esSheetIn .24s cubic-bezier(.2,.8,.2,1) both; }
+.settings-row { border:1px solid transparent; }
+.settings-row:active { border-color:rgba(77,166,255,.25); background:rgba(56,139,230,.08); }
+#input { transition:height .15s ease, background .15s ease; }
+#input:focus { background:rgba(100,160,220,.045); }
+#emojiBtn:active, #attachBtn:active { filter:brightness(1.35); }
+@keyframes esMessageIn { from {opacity:0;transform:translateY(7px) scale(.985)} to {opacity:1;transform:translateY(0) scale(1)} }
+@keyframes esStickerPop { 0%{opacity:0;transform:scale(.72) rotate(-4deg)} 75%{opacity:1;transform:scale(1.055) rotate(1deg)} 100%{transform:scale(1) rotate(0)} }
+@keyframes esRecordPulse { 0%,100%{box-shadow:0 0 0 2px rgba(255,75,94,.06)} 50%{box-shadow:0 0 0 5px rgba(255,75,94,.13)} }
+@keyframes esRecordDot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.78)} }
+@keyframes esSendReady { from{transform:scale(.8) rotate(-12deg);opacity:.6} to{transform:scale(1) rotate(0);opacity:1} }
+@keyframes esPanelIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+@keyframes esSheetIn { from{opacity:.65;transform:translateY(12px) scale(.99)} to{opacity:1;transform:translateY(0) scale(1)} }
+@media (prefers-reduced-motion:reduce) {
+  *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; scroll-behavior:auto!important; transition-duration:.01ms!important; }
+}
+
+/* Owner console and sticker library refinements */
+.owner-sheet .op-head { position:sticky;top:0;z-index:4;backdrop-filter:blur(18px); }
+.owner-sheet .op-bar { border-bottom:1px solid rgba(95,155,220,.18); }
+.owner-sheet .op-crown { filter:drop-shadow(0 0 9px rgba(78,160,255,.28)); }
+.owner-sheet .op-stat, .owner-sheet .stat-card { transition:transform .18s ease,border-color .18s ease,background .18s ease; }
+.owner-sheet .op-stat:active, .owner-sheet .stat-card:active { transform:translateY(1px); }
+.sticker, .sticker-item, [data-sticker] { cursor:pointer; }
+.sticker:hover, .sticker-item:hover, [data-sticker]:hover { filter:brightness(1.08); }
+.sticker:active, .sticker-item:active, [data-sticker]:active { transform:scale(.92); }
+
+/* لوحة المالك v49: إجراءات المستخدمين */
+.owner-user-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;max-width:230px}
+.owner-user-actions small{flex-basis:100%;text-align:end;color:var(--muted,#8c96a8);font-size:11px;line-height:1.4}
+.owner-user-actions button{white-space:nowrap}
+@media(max-width:560px){.owner-user-actions{max-width:145px;gap:4px}.owner-user-actions .btn-mini{font-size:11px;padding:6px 8px}}
+
+/* v54: البحث وإدارة الملصقات الشخصية */
+.stk-search-wrap{position:sticky;top:0;z-index:3;padding:4px 0 8px;background:var(--panel)}
+.stk-search{display:block;width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:13px;background:var(--panel2);color:var(--text);padding:11px 13px;font:inherit;outline:none}
+.stk-search:focus{border-color:var(--ice);box-shadow:0 0 0 2px color-mix(in srgb,var(--ice) 18%,transparent)}
+.stk-delete{position:absolute;inset-inline-start:3px;top:3px;width:23px;height:23px;border-radius:50%;display:grid;place-items:center;background:#b91c1c;color:#fff;font:700 17px/1 system-ui;font-style:normal;box-shadow:0 2px 8px #0006;z-index:2}
+
+/* مدير البوتات */
+.bm-secret{width:100%;background:var(--ink);border:1px solid var(--blue);border-radius:12px;padding:11px 12px;color:inherit;font:13px/1.4 ui-monospace,Menlo,monospace;outline:0;user-select:text;-webkit-user-select:text}
+.bm-code{margin:8px 0 0;padding:12px;border-radius:12px;background:var(--ink);border:1px solid var(--line);font:12px/1.7 ui-monospace,Menlo,monospace;white-space:pre-wrap;word-break:break-all;overflow-x:auto;text-align:left}
+.bm-secret-card{margin-bottom:14px}
