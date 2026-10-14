@@ -11,6 +11,8 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const apiBot = fs.readFileSync(path.join(root, 'api/bot.js'), 'utf8');
 const apiCallback = fs.readFileSync(path.join(root, 'api/bot-callback.js'), 'utf8');
+const apiGuard = fs.readFileSync(path.join(root, 'api/_net-guard.js'), 'utf8');
+const apiEsBot = fs.readFileSync(path.join(root, 'api/es-bot.js'), 'utf8');
 const checks = [];
 const check = (name, pass, detail = '') => checks.push({ name, pass: Boolean(pass), detail });
 const cleanText = (value, max) => String(value || '').trim().slice(0, max);
@@ -39,7 +41,7 @@ check('bot token is stored/checked by hash', /botSecrets\/\$\{hash\(raw\)\}/.tes
 check('command payload is capped to 50 items', /value\.slice\(0, 50\)/.test(apiBot));
 check('button payload is capped to 8 items', /value\.slice\(0, 8\)/.test(apiBot));
 check('overlong command names are rejected rather than truncated into valid commands', /x\.command\.length <= 32/.test(apiBot));
-check('webhooks reject private IPv4 ranges and local hostnames', /host === \"localhost\"/.test(apiBot) && /a === 127/.test(apiBot) && /a === 192 && b === 168/.test(apiBot));
+check('webhooks reject private IPv4 ranges and local hostnames (shared guard used by BOTH bot APIs)', /host === \"localhost\"/.test(apiGuard) && /a === 127/.test(apiGuard) && /a === 192 && b === 168/.test(apiGuard) && /_net-guard/.test(apiBot) && /_net-guard/.test(apiEsBot));
 check('callback requires group membership', /gd\.members \|\| \[\]\)\.includes\(u\.uid\)/.test(apiCallback));
 check('callback data is length-limited', /String\(body\.data \|\| ""\)\.slice\(0, 128\)/.test(apiCallback));
 

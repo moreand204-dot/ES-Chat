@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const { recordBotEvent } = require("./_bot-stats");
+const { resolvesToPublicOnly } = require("./_net-guard");
 
 // Shared, bounded webhook transport for message updates and callback queries.
 async function deliverWebhook(db, bot, update) {
@@ -18,6 +20,12 @@ async function deliverWebhook(db, bot, update) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4500);
   try {
+    // SSRF: لازم اسم السيرفر يتحلّل لعناوين عامة بس (مش 127.x / 10.x / 169.254.x ...)
+    let host = ""; try { host = new URL(bot.webhookUrl).hostname; } catch {}
+    if (!host || !(await resolvesToPublicOnly(host))) {
+      await recordBotEvent(db, bot.id, update, "webhook_error", "blocked host").catch(() => {});
+      return false;
+    }
     const response = await fetch(bot.webhookUrl, {
       method: "POST",
       redirect: "manual",
@@ -32,8 +40,11 @@ async function deliverWebhook(db, bot, update) {
       signal: controller.signal
     });
     // Do not follow redirects: a redirect could route a previously checked URL elsewhere.
-    return response.status >= 200 && response.status < 300;
-  } catch {
+    const good = response.status >= 200 && response.status < 300;
+    await recordBotEvent(db, bot.id, update, good ? "webhook_success" : "webhook_error", `HTTP ${response.status}`).catch(() => {});
+    return good;
+  } catch (e) {
+    await recordBotEvent(db, bot.id, update, "webhook_error", e?.name === "AbortError" ? "timeout" : "network error").catch(() => {});
     return false;
   } finally {
     clearTimeout(timer);

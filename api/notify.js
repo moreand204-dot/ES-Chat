@@ -44,7 +44,7 @@ module.exports = async (req, res) => {
     init();
     const m = /^Bearer (.+)$/.exec(req.headers.authorization || "");
     if (!m) return res.status(401).json({ error: "no token" });
-    const uid = (await admin.auth().verifyIdToken(m[1])).uid;
+    let uid; try { uid = (await admin.auth().verifyIdToken(m[1])).uid; } catch { return res.status(401).json({ error: "bad token" }); }
     const body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
     const db = admin.firestore();
     const now = Date.now(), prev = rate.get(uid) || [], recent = prev.filter(t => now - t < 10000);
@@ -94,6 +94,6 @@ module.exports = async (req, res) => {
     return res.status(200).json(r);
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: "server", code: e.code || "", detail: String(e.message || e).slice(0, 200) });
+    return res.status(500).json({ error: "server", code: e.code || "", ...(String(e.code || "").startsWith("env") ? { detail: String(e.message || e).slice(0, 200) } : {}) });
   }
 };

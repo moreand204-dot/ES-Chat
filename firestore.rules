@@ -34,7 +34,7 @@ service cloud.firestore {
       allow update: if isOwner()
         || (signedIn() && request.auth.uid == uid
             && request.resource.data.diff(resource.data).affectedKeys()
-                 .hasOnly(['name','photo','gender','bio','username','lastLogin','loginCount','onboarded','lastSeen','hideLastSeen','readReceipts','noAdd'])
+                 .hasOnly(['name','photo','gender','bio','username','lastLogin','loginCount','onboarded','lastSeen','hideLastSeen','hideProfilePhoto','hideBio','readReceipts','noAdd','phone','phonePublic'])
             && (!('username' in request.resource.data.diff(resource.data).affectedKeys())
                 || resource.data.get('username', '') == '')
             && validProfile(request.resource.data));
@@ -45,7 +45,7 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if isOwner();
       allow create, update: if signedIn() && (request.auth.uid == uid || isOwner())
-        && request.resource.data.keys().hasOnly(['uid','name','photo','gender','bio','username','hideLastSeen','lastSeen','verified'])
+        && request.resource.data.keys().hasOnly(['uid','name','photo','gender','bio','username','hideLastSeen','lastSeen','verified','phone','phonePublic'])
         && request.resource.data.uid == uid && validProfile(request.resource.data)
         // منع التوثيق الذاتي: علامة التوثيق ما تتكتبش true إلا من مالك الموقع أو لو حساب المستخدم نفسه موثّق
         && (isOwner() || request.resource.data.get('verified', false) == false
@@ -128,6 +128,19 @@ service cloud.firestore {
     }
 
     // ---------- أسماء المستخدمين (فريدة) ----------
+    // أرقام الهاتف لا تُسجّل هنا إلا بعد اختيار المستخدم إتاحة العثور عليه بالرقم.
+    match /phoneNumbers/{phone} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if signedIn() && request.resource.data.keys().hasOnly(['uid'])
+        && request.resource.data.uid == request.auth.uid
+        && exists(/databases/$(db)/documents/users/$(request.auth.uid))
+        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('phonePublic', false) == true
+        && get(/databases/$(db)/documents/users/$(request.auth.uid)).data.get('phone', '') == phone
+        && phone.matches('^\\+[1-9][0-9]{7,14}$');
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
     match /usernames/{u} {
       allow get: if signedIn();
       allow list: if isOwner();
@@ -151,10 +164,43 @@ service cloud.firestore {
       allow update: if inId() && notBanned()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastText','lastAt','lastUid','typing','read','ttl','pin','pins'])
         && request.resource.data.get('pins', []).size() <= 3;
+      // منع حذف مستند المحادثة نفسه من العميل؛ لا يوجد حذف شامل للمحادثة عبر Firestore client.
+      allow delete: if false;
+    }
+
+    // ---------- وسائط مؤقتة بين طرفين المحادثة الخاصة (Firebase وسيط فقط؛ المستلم بينزّلها ويحفظها على جهازه وبيمسحها) ----------
+    match /chats/{chatId}/blobs/{b} {
+      function mem() { return signedIn() && chatId != 'public' && exists(/databases/$(db)/documents/chats/$(chatId)) && request.auth.uid in get(/databases/$(db)/documents/chats/$(chatId)).data.members; }
+      allow read: if mem();
+      allow create: if mem() && notBanned()
+        && request.resource.data.keys().hasOnly(['uid','at','mid','i','d'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.at == request.time
+        && request.resource.data.mid is string && request.resource.data.mid.size() <= 60
+        && request.resource.data.i is int && request.resource.data.i >= 0 && request.resource.data.i < 40
+        && request.resource.data.d is string && request.resource.data.d.size() <= 700000;
+      allow delete: if mem();
+    }
+
+    function validDualCipher(c) {
+      return c is map
+        && c.keys().hasOnly(['v','alg','recipient','sender'])
+        && c.v == 2
+        && c.alg == 'ECDH-P256-AESGCM-DUAL'
+        && c.recipient is map
+        && c.sender is map
+        && c.recipient.keys().hasOnly(['senderEphemeralPublic','iv','ciphertext'])
+        && c.sender.keys().hasOnly(['senderIdentityPublic','iv','ciphertext'])
+        && c.recipient.senderEphemeralPublic is map
+        && c.sender.senderIdentityPublic is map
+        && c.recipient.iv is string && c.recipient.iv.size() == 16
+        && c.sender.iv is string && c.sender.iv.size() == 16
+        && c.recipient.ciphertext is string && c.recipient.ciphertext.size() <= 600000
+        && c.sender.ciphertext is string && c.sender.ciphertext.size() <= 600000;
     }
 
     match /chats/{chatId}/messages/{m} {
-      function inChat() { return chatId == 'public' || chatId.split('_')[0] == request.auth.uid || chatId.split('_')[1] == request.auth.uid; }
+      function inChat() { return chatId == 'public' || (signedIn() && exists(/databases/$(db)/documents/chats/$(chatId)) && request.auth.uid in get(/databases/$(db)/documents/chats/$(chatId)).data.members); }
       allow read: if signedIn() && inChat();
       allow create: if signedIn() && notBanned() && inChat() && (chatId != 'public' || isOwner() || siteFlag('publicOpen'))
         && (chatId == 'public' || (('cipher' in request.resource.data) && !('loc' in request.resource.data) && !('poll' in request.resource.data) && !('text' in request.resource.data) && !('img' in request.resource.data) && !('file' in request.resource.data)))
@@ -167,13 +213,7 @@ service cloud.firestore {
             || ('cipher' in request.resource.data
               && request.resource.data.cipher.v == 2
               && request.resource.data.cipher.alg == 'ECDH-P256-AESGCM-DUAL'
-              && request.resource.data.cipher.keys().hasOnly(['v','alg','recipient','sender'])
-              && request.resource.data.cipher.recipient.keys().hasOnly(['senderEphemeralPublic','iv','ciphertext'])
-              && request.resource.data.cipher.sender.keys().hasOnly(['senderIdentityPublic','iv','ciphertext'])
-              && request.resource.data.cipher.recipient.iv is string && request.resource.data.cipher.recipient.iv.size() == 16
-              && request.resource.data.cipher.sender.iv is string && request.resource.data.cipher.sender.iv.size() == 16
-              && request.resource.data.cipher.recipient.ciphertext is string && request.resource.data.cipher.recipient.ciphertext.size() <= 600000
-              && request.resource.data.cipher.sender.ciphertext is string && request.resource.data.cipher.sender.ciphertext.size() <= 600000))
+              && validDualCipher(request.resource.data.cipher)))
         && (!('poll' in request.resource.data) || (request.resource.data.poll.keys().hasOnly(['q','o'])
               && request.resource.data.poll.q is string && request.resource.data.poll.q.size() >= 1 && request.resource.data.poll.q.size() <= 200
               && request.resource.data.poll.o is list && request.resource.data.poll.o.size() >= 2 && request.resource.data.poll.o.size() <= 12))
@@ -184,13 +224,15 @@ service cloud.firestore {
         && request.resource.data.get('deleted', false) == true)
         // تعديل منشور خاص: صاحبه فقط
         || (signedIn() && chatId != 'public' && resource.data.uid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cipher'])
-          && request.resource.data.cipher.keys().hasOnly(['v','alg','recipient','sender'])
-          && request.resource.data.cipher.v == 2
-          && request.resource.data.cipher.alg == 'ECDH-P256-AESGCM-DUAL')
+          && resource.data.get('deleted', false) == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cipher','editedAt'])
+          && validDualCipher(request.resource.data.cipher)
+          && request.resource.data.editedAt is timestamp)
         || (signedIn() && chatId == 'public' && resource.data.uid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
-          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+          && resource.data.get('deleted', false) == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','editedAt'])
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && request.resource.data.editedAt is timestamp)
         // تفاعل بإيموجي: كل مستخدم يعدّل خانته فقط، والقراءة محصورة بأطراف المحادثة
         || (signedIn() && chatId == 'public' && inChat()
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
@@ -213,7 +255,9 @@ service cloud.firestore {
               || (request.resource.data.votes[request.auth.uid] is int
                   && request.resource.data.votes[request.auth.uid] >= 0
                   && request.resource.data.votes[request.auth.uid] < resource.data.poll.o.size())));
-      allow delete: if signedIn() && (resource.data.uid == request.auth.uid || (isOwner() && chatId == 'public'));
+      // لا يكفي أن يكون المستخدم صاحب الرسالة: يجب أيضًا أن يكون طرفًا في المحادثة.
+      allow delete: if signedIn() && inChat()
+        && (resource.data.uid == request.auth.uid || (isOwner() && chatId == 'public'));
     }
 
     match /calls/{cid} {
@@ -249,6 +293,17 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
     match /botSecrets/{secretId} {
+      allow read, write: if false;
+    }
+    // كل الكتابة هنا تتم من api/link-device.js بصلاحيات Admin SDK فقط.
+    match /users/{uid}/linkedDevices/{deviceId} {
+      allow get, list: if signedIn() && request.auth.uid == uid;
+      allow create, update, delete: if false;
+    }
+    match /linkRequests/{reqId} {
+      allow read, write: if false;
+    }
+    match /bots/{botId}/linkedAccounts/{uid} {
       allow read, write: if false;
     }
 
@@ -423,8 +478,10 @@ service cloud.firestore {
         && request.resource.data.deleted == true)
         // تعديل منشور: صاحبه فقط، والنص لا يتجاوز 2000 حرف
         || (signedIn() && resource.data.uid == request.auth.uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
-          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+          && resource.data.get('deleted', false) == false
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text','editedAt'])
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && request.resource.data.editedAt is timestamp)
         // تفاعل بإيموجي: العضو يعدّل خانته هو بس جوه reactions
         || (signedIn() && request.auth.uid in G().members && G().get('noReact', false) == false
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
@@ -503,6 +560,21 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.keys().hasOnly(['visits']) && request.resource.data.visits == 1;
       allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['visits'])
         && request.resource.data.visits == resource.data.visits + 1;
+    }
+
+    // ---------- سجل نشاط لوحة المالك ----------
+    // السجل قابل للقراءة والإضافة من المالك فقط، ولا يمكن تعديل أو حذف الأحداث بعد تسجيلها.
+    match /ownerActivity/{id} {
+      allow read: if isOwner();
+      allow create: if isOwner()
+        && request.resource.data.keys().hasOnly(['actorUid','actorEmail','action','targetUid','details','at'])
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.actorEmail == request.auth.token.email
+        && request.resource.data.action is string && request.resource.data.action.size() <= 60
+        && request.resource.data.targetUid is string && request.resource.data.targetUid.size() <= 128
+        && request.resource.data.details is string && request.resource.data.details.size() <= 300
+        && request.resource.data.at == request.time;
+      allow update, delete: if false;
     }
 
     // ---------- سجل الدخول ----------

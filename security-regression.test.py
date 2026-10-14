@@ -107,7 +107,9 @@ ok('delete control does not trigger long-press favorite handler', 'if (e.target.
 bot_api = (root/'api/bot.js').read_text()
 fuzzer = (root/'tools/es-fuzzer.mjs').read_text()
 ok('bot command names longer than 32 characters are rejected, not truncated', 'x.command.length <= 32' in bot_api and 'String(x?.command || "").trim()' in bot_api)
-ok('webhook URL validation rejects private IPv4 and local hostnames', 'host.endsWith(".localhost")' in bot_api and 'a === 127' in bot_api and 'a === 192 && b === 168' in bot_api)
+net_guard = (root/'api/_net-guard.js').read_text(encoding='utf8')
+es_bot_src = (root/'api/es-bot.js').read_text(encoding='utf8')
+ok('webhook URL validation rejects private IPv4 and local hostnames (one shared guard for bot.js and es-bot.js)', 'localhost' in net_guard and 'a === 127' in net_guard and 'a === 192 && b === 168' in net_guard and '_net-guard' in bot_api and '_net-guard' in es_bot_src)
 ok('offline ES Fuzzer covers malformed payloads and runs without network requests', 'never sends network traffic' in fuzzer and 'javascript URL rejected' in fuzzer and 'IPv6 loopback URL rejected' in fuzzer)
 # v55 language direction and persistence regressions.
 ok('language selection applies document lang and RTL/LTR direction', 'document.documentElement.dir = selected === "ar" ? "rtl" : "ltr"' in app and 'document.documentElement.lang = selected' in app)
@@ -128,7 +130,7 @@ ok('bot owners can request a bounded signed webhook test without exposing secret
 ok('webhook test requires active bot and configured webhook', 'b.active !== true || !b.webhookUrl || !b.tokenHash' in bot_api)
 
 # v58 Telegram BotFather manager regressions.
-ok('Telegram BotFather manager code is kept but the settings row is replaced by the site bot manager', 'settingsRow("telegramBots"' not in app and 'if (id === "telegramBots") return openTelegramBots()' in app)
+ok('Telegram and site bot managers are separate settings sections', 'settingsRow("telegramBots"' in app and 'settingsRow("botsManager"' in app and 'if (id === "telegramBots") return openTelegramBots()' in app)
 # v73 site bot manager.
 bot_api = (root/'api/bot.js').read_text(encoding='utf8')
 ok('Site bot manager is reachable from app settings', 'settingsRow("botsManager"' in app and 'if (id === "botsManager") return openBotsManager()' in app)
@@ -136,7 +138,7 @@ ok('Site bot manager calls /api/bot with the Firebase ID token', 'fetch("/api/bo
 ok('Site bot manager only lists the signed-in owner bots', 'where("owner", "==", S.user.uid)' in app)
 ok('Site bot manager shows secrets in readonly fields and never stores them', 'class="bm-secret" readonly' in app and 'localStorage.setItem("es_bot' not in app)
 ok('Site bot manager covers every owner action of the bot API', all(('action: "%s"' % a) in app or ('"%s"' % a) in app for a in ['create','token','setname','setdescription','setabouttext','setcommands','setsettings','setwebhook','testwebhook','deletewebhook','enable','disable','deletebot']))
-ok('testwebhook is in the owner-authenticated action list of the bot API', '"deletewebhook", "testwebhook"].includes(action)' in bot_api)
+ok('testwebhook is in the owner-authenticated action list of the bot API', 'testwebhook' in bot_api and 'user auth required' in bot_api and 'testwebhook' in bot_api[bot_api.index('if ([\"disable\"'):bot_api.index('if ([\"disable\"')+800])
 ok('Deleted bots cannot be managed or revived and each user has a bot cap', 'snap.data().deleted === true' in bot_api and 'MAX_BOTS' in bot_api and 'bot limit reached' in bot_api)
 ok('Telegram manager no longer crashes on first open (writeBots defined before use)', app.index('const writeBots') < app.index('ensurePrimaryBot();'))
 ok('Telegram manager opens official BotFather without collecting tokens', 'https://t.me/BotFather' in app and 'لا تحفظ أي توكنات' in app and 'tgBotToken' not in app)
@@ -144,7 +146,7 @@ ok('Telegram manager validates usernames and caps local catalog', 'username.toLo
 ok('Telegram manager includes common BotFather command shortcuts', all(x in app for x in ['/newbot','/mybots','/setname','/setdescription','/setabouttext','/setuserpic','/setcommands','/revoke']))
 # v59 EStFather server-side Telegram connection foundation.
 tg_api = (root/'api/telegram-manager.js').read_text()
-ok('EStFather is set as the primary Telegram bot in manager UI', 'EStFather' in app and '@EStFather' in app)
+ok('ESFather is set as the primary Telegram bot in manager UI', 'ESFather' in app and '@ESFather' in app)
 ok('Telegram manager connection check uses authenticated backend endpoint', '/api/telegram-manager' in app and 'S.user.getIdToken()' in app)
 ok('Telegram API token is server-only and endpoint is owner-restricted', 'process.env.TELEGRAM_BOT_TOKEN' in tg_api and 'TELEGRAM_MANAGER_OWNER_UID' in tg_api and 'user.uid !== owner' in tg_api)
 ok('Telegram manager never returns token and bounds upstream request', 'Never return the token' in tg_api and 'AbortController' in tg_api and "redirect: 'error'" in tg_api)

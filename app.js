@@ -368,6 +368,7 @@ function show(view) {
 }
 /* ---- طبقات التنقل: زر الرجوع في النظام بيقفل آخر طبقة (نافذة / محادثة / تبويب) بدل ما يخرّجك من الموقع ---- */
 var _ownTimer = 0;
+var _ldPollTimer = 0, _ldCountdownTimer = 0;
 const LAYERS = []; let ignorePop = 0; const deferred = [];
 function layerOpen(id, close) {
   const e = LAYERS.find(l => l.id === id); if (e) { e.close = close; return; }
@@ -384,7 +385,7 @@ addEventListener("popstate", () => {
   const l = LAYERS.pop(); if (l) l.close();
 });
 const MSTACK = [];
-function modalDom() { MSTACK.length = 0; $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "page", "att-sheet", "emo-sheet", "owner-sheet", "sp-sheet", "bf-sheet", "tgp-sheet"); clearInterval(_ownTimer); }
+function modalDom() { MSTACK.length = 0; $("#modal").classList.add("hidden"); $("#sheet").innerHTML = ""; $("#sheet").classList.remove("wide", "page", "att-sheet", "emo-sheet", "owner-sheet", "sp-sheet", "bf-sheet", "tgp-sheet"); clearInterval(_ownTimer); clearInterval(_ldPollTimer); clearInterval(_ldCountdownTimer); }
 function closeModal() {
   const was = !$("#modal").classList.contains("hidden"); modalDom();
   if (was) setTimeout(() => { if ($("#modal").classList.contains("hidden")) layerClose("modal"); }, 0);
@@ -911,10 +912,78 @@ function openSettingsSection(id) {
   if (id === "appearance") {
     const sh = settingsPage("المظهر", "خصص ألوان ES Chat Pro وخلفية الرسائل وحجم الخط.", `<div class="panel-h">اللون الرئيسي</div><div class="swatches">${ACCENTS.map(([k,c,t])=>`<button type="button" class="sw big ${LS.get("accent","blue")==k?"on":""}" data-acc="${k}" style="background:${c}" aria-label="${t}" title="${t}"></button>`).join("")}</div><div class="panel-h">خلفية الرسائل</div><div class="seg3">${WALLS.map(([k,t])=>`<button type="button" class="${LS.get("wp","dots")==k?"on":""}" data-wp="${k}">${t}</button>`).join("")}</div><div class="panel-h">حجم الخط</div><div class="seg3">${[["s","صغير"],["m","متوسط"],["l","كبير"]].map(([k,t])=>`<button type="button" class="${LS.get("fs","m")==k?"on":""}" data-fs="${k}">${t}</button>`).join("")}</div>`);sh.querySelectorAll("[data-acc]").forEach(b=>b.onclick=()=>{LS.set("accent",b.dataset.acc);applyTheme();sh.querySelectorAll("[data-acc]").forEach(x=>x.classList.toggle("on",x===b));});sh.querySelectorAll("[data-wp]").forEach(b=>b.onclick=()=>{LS.set("wp",b.dataset.wp);applyTheme();sh.querySelectorAll("[data-wp]").forEach(x=>x.classList.toggle("on",x===b));});sh.querySelectorAll("[data-fs]").forEach(b=>b.onclick=()=>{LS.set("fs",b.dataset.fs);applyTheme();sh.querySelectorAll("[data-fs]").forEach(x=>x.classList.toggle("on",x===b));});return sh;
   }
-  if (id === "devices") { const did=LS.get("device_label","")||((navigator.userAgent.match(/Android|iPhone|iPad/i)||["جهاز متصفح"])[0]+" · "+Math.random().toString(36).slice(2,7));LS.set("device_label",did);return settingsPage("الأجهزة النشطة","هذا الجهاز هو جلسة التشفير الحالية. لا نعرض أجهزة أخرى إلا إذا كانت مسجلة بمفاتيحها.",`<div class="device-card"><b>هذا الجهاز</b><span>${esc(did)}</span><small>المتصفح: ${esc(navigator.userAgent.slice(0,90))}</small><i>مفتاح E2EE محلي</i></div><div class="privacy-note"><b>خصوصية الأجهزة</b><span>تسجيل الخروج يلغي الجلسة الحالية، ولا يرسل مفاتيحك الخاصة إلى الخادم.</span></div>`); }
+  if (id === "devices") return openLinkedDevices();
   if (id === "language") { const active = me.lang === "en" ? "en" : "ar"; const sh=settingsPage("اللغة / Language","اختر لغة الواجهة. يتغير اتجاه الصفحة بين RTL وLTR، ويُحفظ الاختيار على الحساب والجهاز.",`<div class="seg3"><button type="button" id="langAr" class="${active==="ar"?"on":""}">العربية</button><button type="button" id="langEn" class="${active==="en"?"on":""}">English</button></div><div class="privacy-note"><b>اتجاه الواجهة</b><span id="langDirection">${active === "en" ? "English · Left to right (LTR)" : "العربية · من اليمين إلى اليسار (RTL)"}</span></div><p class="hint">تُعرض الرسائل التي توفر textAr وtextEn باللغة المختارة. بقية النصوص التي لم تُترجم بعد ستظل بلغتها الأصلية.</p>`);const set=async lang=>{lang=lang==="en"?"en":"ar";const prev=me.lang==="en"?"en":"ar";applyAppLanguage(lang);sh.querySelectorAll(".seg3 button").forEach(x=>x.classList.toggle("on",x.id===(lang==="en"?"langEn":"langAr")));sh.querySelector("#langDirection").textContent=lang==="en"?"English · Left to right (LTR)":"العربية · من اليمين إلى اليسار (RTL)";try{await updateDoc(doc(db,"users",S.user.uid),{lang});await setDoc(doc(db,"users",S.user.uid,"public","profile"),{lang}, {merge:true});S.me.lang=lang;toast(lang==="en"?"Language saved":"تم حفظ اللغة");}catch(e){console.error("save language",e);applyAppLanguage(prev);sh.querySelectorAll(".seg3 button").forEach(x=>x.classList.toggle("on",x.id===(prev==="en"?"langEn":"langAr")));sh.querySelector("#langDirection").textContent=prev==="en"?"English · Left to right (LTR)":"العربية · من اليمين إلى اليسار (RTL)";toast("تعذّر حفظ اللغة على الحساب؛ تم إرجاع الاختيار السابق");}};sh.querySelector("#langAr").onclick=()=>set("ar");sh.querySelector("#langEn").onclick=()=>set("en");return sh; }
   if (id === "power") { const sh=settingsPage("توفير الطاقة","قلل الحركة واستهلاك الموارد على الأجهزة الضعيفة.",`${switchRow("pMotion",!LS.get("motion",true),"تقليل الحركة","إيقاف الانتقالات تلقائيًا")}${switchRow("pQuiet",LS.get("quiet",false),"توفير الإشعارات","استخدم ساعات الهدوء لتقليل التنبيهات")}`);sh.querySelector("#pMotion").onchange=e=>{LS.set("motion",!e.target.checked);applyTheme();};sh.querySelector("#pQuiet").onchange=e=>LS.set("quiet",e.target.checked);return sh; }
   return settingsPage("معلومات ES Chat Pro","منصة مراسلة أصلية بخصوصية قوية وتشفير للمحادثات الخاصة.",`<div class="privacy-note"><b>ES Chat Pro</b><span>الإصدار v38 · واجهة عربية وإنجليزية · E2EE للمحادثات الخاصة.</span></div>`);
+}
+/* ---------------- الأجهزة المرتبطة (ربط بوت بالحساب — زي واتساب) ---------------- */
+async function linkDeviceApi(payload, hdrExtra = {}) {
+  const headers = { "content-type": "application/json", ...hdrExtra };
+  if (!hdrExtra.authorization && S.user) headers.authorization = `Bearer ${await S.user.getIdToken()}`;
+  const r = await fetch("/api/link-device", { method: "POST", headers, body: JSON.stringify(payload) });
+  let data = {}; try { data = await r.json(); } catch {}
+  if (!r.ok) throw Object.assign(new Error(data.error || "request failed"), { status: r.status, data });
+  return data;
+}
+function linkDeviceErr(e) {
+  const m = e && e.message;
+  if (m === "too many pending requests") return "في أكواد كتير شغالة دلوقتي، استنى شوية وجرّب تاني";
+  if (m === "linked device limit reached") return "وصلت للحد الأقصى من الأجهزة المرتبطة (20). امسح جهاز قديم الأول";
+  if (m === "expired") return "الكود انتهى، اطلب كود جديد";
+  if (m === "bad_code") return "الكود غلط";
+  if (m === "already_used") return "الكود ده اتستخدم قبل كده";
+  if (m === "too_many_attempts") return "محاولات كتير غلط؛ اطلب كود جديد";
+  if (e && e.status === 401) return "سجّل دخول تاني وجرّب";
+  return "تعذّر تنفيذ العملية";
+}
+async function openLinkedDevices() {
+  const did = LS.get("device_label", "") || ((navigator.userAgent.match(/Android|iPhone|iPad/i) || ["جهاز متصفح"])[0] + " · " + Math.random().toString(36).slice(2, 7));
+  LS.set("device_label", did);
+  const sh = settingsPage("الأجهزة المرتبطة", "اربط بوت بحسابك عشان يشتغل في مجموعاتك اللي إنت عضو أو مشرف فيها — زي فكرة ربط الأجهزة في واتساب بالظبط. ربط بوت مش بيديه وصول لمحادثاتك الخاصة المشفّرة أبدًا.", `
+    <div class="device-card"><b>هذا الجهاز</b><span>${esc(did)}</span><small>المتصفح: ${esc(navigator.userAgent.slice(0, 90))}</small><i>مفتاح E2EE محلي</i></div>
+    <div class="panel-h">ربط بوت بحسابك</div>
+    <div class="device-card"><small>اضغط "توليد كود" وهاتخد كود صالح لمدة دقيقة تقريبًا. ادّي الكود ده (أو الرابط) لصاحب البوت عشان يأكّده من سيرفره بالرمز السري بتاعه.</small><div class="actions"><button type="button" class="btn-primary" id="ldGenerate">توليد كود ربط</button></div><div id="ldPending"></div></div>
+    <div class="panel-h">الأجهزة/البوتات المرتبطة</div>
+    <div id="ldList"><div class="hint">جارٍ التحميل…</div></div>
+    <div class="privacy-note"><b>خصوصية الربط</b><span>تسجيل الخروج يلغي جلسة المتصفح الحالية فقط. إلغاء ربط بوت بيوقف صلاحيته فورًا، ولا يرسل أي مفتاح تشفير خاص إلى الخادم أو للبوت.</span></div>`);
+  const stopTimers = () => { clearInterval(_ldPollTimer); clearInterval(_ldCountdownTimer); _ldPollTimer = 0; _ldCountdownTimer = 0; };
+
+  const renderList = async () => {
+    const list = sh.querySelector("#ldList");
+    try {
+      const qs = await getDocs(query(collection(db, "users", S.user.uid, "linkedDevices"), where("status", "==", "active")));
+      const rows = qs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => ((b.linkedAt && b.linkedAt.seconds) || 0) - ((a.linkedAt && a.linkedAt.seconds) || 0));
+      list.innerHTML = rows.length ? rows.map(r => `<div class="device-card"><b>${esc(r.botName || "بوت")}</b><small>نوع الربط: بوت · صلاحية: مجموعاتك وقنواتك اللي إنت عضو/مشرف فيها بس</small><div class="actions"><button type="button" class="btn-danger" data-revoke="${esc(r.id)}">إلغاء الربط</button></div></div>`).join("") : `<div class="empty-list">مفيش بوتات مرتبطة بحسابك لسه.</div>`;
+      list.querySelectorAll("[data-revoke]").forEach(btn => btn.onclick = async () => {
+        if (!confirm("تلغي ربط البوت ده؟ هيفقد صلاحيته على مجموعاتك فورًا.")) return;
+        btn.disabled = true;
+        try { await linkDeviceApi({ action: "revoke", deviceId: btn.dataset.revoke }); toast("اتلغى الربط"); renderList(); }
+        catch (e) { toast(linkDeviceErr(e)); btn.disabled = false; }
+      });
+    } catch { list.innerHTML = `<div class="empty-list">تعذّر تحميل القائمة. اتأكد إن firestore.rules منشورة.</div>`; }
+  };
+
+  sh.querySelector("#ldGenerate").onclick = async () => {
+    const btn = sh.querySelector("#ldGenerate"), area = sh.querySelector("#ldPending");
+    btn.disabled = true; stopTimers();
+    try {
+      const d = await linkDeviceApi({ action: "create" });
+      let left = d.expiresInSeconds;
+      const draw = () => { area.innerHTML = `<div class="device-card bm-secret-card"><b>كود الربط</b><small>صالح لمدة <span id="ldLeft">${left}</span> ثانية، بيتجدد تلقائيًا</small><input type="text" class="bm-secret" readonly dir="ltr" value="${esc(d.code)}"><div class="actions"><button type="button" class="btn-ghost" id="ldCopyCode">نسخ الكود</button><button type="button" class="btn-ghost" id="ldCopyLink">نسخ رابط الربط</button></div></div>`; area.querySelector("#ldCopyCode").onclick = () => copyText(d.code, "اتنسخ الكود"); area.querySelector("#ldCopyLink").onclick = () => copyText(d.qrPayload, "اتنسخ رابط الربط"); };
+      draw();
+      _ldCountdownTimer = setInterval(() => { if (!area.isConnected) return clearInterval(_ldCountdownTimer); left -= 1; const el = sh.querySelector("#ldLeft"); if (el) el.textContent = Math.max(left, 0); if (left <= 0) clearInterval(_ldCountdownTimer); }, 1000);
+      _ldPollTimer = setInterval(async () => {
+        if (!area.isConnected) return clearInterval(_ldPollTimer);
+        try {
+          const s = await linkDeviceApi({ action: "status", requestId: d.requestId });
+          if (s.status === "confirmed") { stopTimers(); area.innerHTML = ""; btn.disabled = false; toast("اتربط البوت بنجاح"); renderList(); }
+          else if (s.status === "expired") { stopTimers(); area.innerHTML = `<div class="hint">انتهت صلاحية الكود. اضغط توليد كود من جديد.</div>`; btn.disabled = false; }
+        } catch { /* تجاهل أخطاء الاستطلاع المؤقتة */ }
+      }, 3000);
+    } catch (e) { toast(linkDeviceErr(e)); btn.disabled = false; }
+  };
+  renderList();
 }
 /* ---------------- مدير بوتات الموقع (ES Bots) ---------------- */
 async function botApi(payload) {
@@ -981,6 +1050,9 @@ async function openBotDetail(bid, onChange) {
     <div id="bdSecret"></div>
     <div class="device-card"><b>الرمز السري</b><small dir="ltr">${esc(b.tokenPrefix || "esb_live_")}…</small><small>الرمز بيظهر مرة واحدة عند إصداره، والخادم بيخزن بصمته بس. لو ضاع أصدر رمز جديد (القديم بيتلغي).</small><div class="actions"><button type="button" class="btn-primary" id="bdRotate">إصدار رمز جديد</button><button type="button" class="btn-ghost" id="bdToggle">${b.active ? "إيقاف البوت" : "تشغيل البوت"}</button></div></div>
     <div class="panel-h">الاسم</div>
+    <div class="field"><label for="bdUser">اسم المستخدم @username</label><input type="text" id="bdUser" maxlength="20" dir="ltr" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="mybot_name" value="${esc(b.username && !/^[0-9a-f]{18}$/.test(b.username) ? b.username : "")}"><small class="hint">3-20 حرف، يبدأ بحرف، أرقام وشرطة سفلية فقط. فريد لكل بوت.</small></div>
+    <div class="actions"><button type="button" class="btn-primary" id="bdSaveUser">حفظ الـ Username</button></div>
+    <div class="hint" id="bdUserMsg"></div>
     <div class="field"><label for="bdNameAr">الاسم بالعربي</label><input type="text" id="bdNameAr" maxlength="40" value="${esc(b.nameAr || b.name)}"></div>
     <div class="field"><label for="bdNameEn">الاسم بالإنجليزي</label><input type="text" id="bdNameEn" dir="ltr" maxlength="40" value="${esc(b.nameEn || b.name)}"></div>
     <div class="actions"><button type="button" class="btn-primary" id="bdSaveName">حفظ الاسم</button></div>
@@ -999,6 +1071,7 @@ async function openBotDetail(bid, onChange) {
     ${switchRow("bdInline", st.inline === true, "الوضع المضمّن (Inline)", "")}
     ${switchRow("bdGeo", st.inlineGeo === true, "الموقع في الوضع المضمّن", "")}
     <div class="actions"><button type="button" class="btn-primary" id="bdSaveSettings">حفظ الإعدادات</button></div>
+    <div class="device-card"><b>ES Bot Engine</b><small>المحرك يحلل أوامر البوت بصيغة /command، يحترم وضع الخصوصية، ويرفض الرسائل غير الموجهة للبوت عند تفعيل الخصوصية.</small><small>حد التشغيل الحالي: 120 تحديثًا لكل بوت في الدقيقة داخل كل نسخة خادم.</small></div>
     <div class="panel-h">Webhook</div>
     <div class="field"><label for="bdHook">رابط https لاستقبال التحديثات</label><input type="text" id="bdHook" dir="ltr" inputmode="url" placeholder="https://example.com/hook" value="${esc(b.webhookUrl || "")}"></div>
     <div class="actions"><button type="button" class="btn-primary" id="bdHookSave">حفظ الرابط</button><button type="button" class="btn-ghost" id="bdHookTest">اختبار</button><button type="button" class="btn-danger" id="bdHookDel">حذف</button></div>
@@ -1008,12 +1081,31 @@ async function openBotDetail(bid, onChange) {
 X-ES-Bot-Token: esb_live_...
 {"action":"addToGroup","groupId":"GROUP_ID","admin":true}
 {"action":"sendMessage","groupId":"GROUP_ID","text":"Hello"}</pre></div>
+    <div class="panel-h">الإحصائيات والسجل</div>
+    <div class="device-card"><div id="bdStatsView">اضغط تحديث لعرض نشاط البوت.</div><div class="actions"><button type="button" class="btn-ghost" id="bdStatsLoad">تحديث الإحصائيات</button></div><div id="bdStatsLog"></div></div>
     <div class="panel-h">منطقة خطرة</div>
     <div class="actions"><button type="button" class="btn-danger" id="bdDelete">حذف البوت نهائيًا</button></div>`);
   const $$ = id => sh.querySelector(id), val = id => $$(id).value.trim();
   const run = async (btn, fn, ok) => { btn.disabled = true; try { await fn(); if (onChange) onChange(); if (ok) toast(ok); } catch (er) { toast(botErr(er)); } btn.disabled = false; };
+  $$("#bdStatsLoad").onclick = async e => { const view = $$("#bdStatsView"), log = $$("#bdStatsLog"); e.currentTarget.disabled = true; view.textContent = "جارٍ تحميل الإحصائيات…"; try { const d = await botApi({ action: "stats", botId: b.id }); const x = d.stats || {}; view.textContent = `التحديثات: ${x.updates || 0} · الرسائل: ${x.messages || 0} · الأوامر: ${x.commands || 0} · الأزرار: ${x.callbacks || 0} · Webhook ناجح: ${x.webhookSuccess || 0} · أخطاء Webhook: ${x.webhookErrors || 0}`; log.innerHTML = (d.logs || []).slice(0, 20).map(l => `<div class="row-item"><div class="meta"><b>${esc(l.type || "event")}</b><small>${esc(l.status || "received")}${l.detail ? " · " + esc(l.detail) : ""}</small></div></div>`).join("") || `<small>لا توجد سجلات بعد.</small>`; } catch (er) { view.textContent = botErr(er); } e.currentTarget.disabled = false; };
   $$("#bdRotate").onclick = e => { if (!confirm("إصدار رمز جديد هيلغي الرمز القديم فورًا. تكمل؟")) return; run(e.currentTarget, async () => { const d = await botApi({ action: "token", botId: b.id }); showBotSecret($$("#bdSecret"), "الرمز الجديد", d.token); $$("#bdSecret").scrollIntoView({ block: "nearest" }); }, "اتصدر رمز جديد"); };
   $$("#bdToggle").onclick = e => run(e.currentTarget, async () => { const d = await botApi({ action: b.active ? "disable" : "enable", botId: b.id }); b.active = d.active; $$("#bdState").textContent = b.active ? "شغّال" : "موقوف"; $$("#bdToggle").textContent = b.active ? "إيقاف البوت" : "تشغيل البوت"; }, "اتحدّثت الحالة");
+  $$("#bdSaveUser").onclick = e => {
+    const msg = $$("#bdUserMsg");
+    const raw = ($$("#bdUser").value || "").trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_]{2,19}$/.test(raw)) { msg.textContent = "Username غير صالح — 3-20 حرف، يبدأ بحرف، بدون مسافات أو رموز خاصة."; msg.className = "hint err"; return; }
+    msg.textContent = "";
+    run(e.currentTarget, async () => {
+      const d = await botApi({ action: "setusername", botId: b.id, username: raw });
+      if (d.unchanged) { msg.textContent = "الـ username لم يتغير."; msg.className = "hint"; return; }
+      b.username = d.username;
+      $$("#bdUser").value = d.username;
+      msg.textContent = `✓ تم حفظ @${d.username} — البحث عن البوت بيشتغل فورًا.`;
+      msg.className = "hint";
+      toast("اتحفظ @" + d.username);
+      if (onChange) onChange();
+    }, "اتحفظ الـ Username");
+  };
   $$("#bdSaveName").onclick = e => { const ar = val("#bdNameAr"), en = val("#bdNameEn"), name = ar || en; if (name.length < 2) { toast("الاسم لازم حرفين على الأقل"); return; } run(e.currentTarget, async () => { await botApi({ action: "setname", botId: b.id, name, nameAr: ar || name, nameEn: en || name }); b.name = name; sh.querySelector("h2").textContent = name; }, "اتحفظ الاسم"); };
   $$("#bdSaveText").onclick = e => run(e.currentTarget, async () => { await botApi({ action: "setdescription", botId: b.id, ar: val("#bdDescAr"), en: val("#bdDescEn") }); await botApi({ action: "setabouttext", botId: b.id, ar: val("#bdAboutAr"), en: val("#bdAboutEn") }); }, "اتحفظ الوصف والنبذة");
   $$("#bdSaveCmds").onclick = e => {
@@ -1038,11 +1130,11 @@ function openTelegramBots() {
   const key = "es_telegram_bot_catalog_v1";
   const readBots = () => { try { const x = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(x) ? x.filter(b => b && typeof b.name === "string" && typeof b.username === "string").slice(0, 50) : []; } catch { return []; } };
   const writeBots = rows => localStorage.setItem(key, JSON.stringify(rows.slice(0, 50)));
-  const ensurePrimaryBot = () => { const rows = readBots(); if (!rows.some(b => b.username.toLowerCase() === "estfather")) { rows.unshift({name:"EStFather",username:"EStFather",note:"البوت الأساسي للمشروع — الربط المباشر يتطلب إعداد الخادم الآمن",primary:true,addedAt:new Date().toISOString()}); writeBots(rows); } }; 
+  const ensurePrimaryBot = () => { const rows = readBots(); if (!rows.some(b => b.username.toLowerCase() === "estfather")) { rows.unshift({name:"ESFather",username:"ESFather",note:"البوت الأساسي للمشروع — الربط المباشر يتطلب إعداد الخادم الآمن",primary:true,addedAt:new Date().toISOString()}); writeBots(rows); } };
   ensurePrimaryBot();
   const botRows = () => { const rows = readBots(); return rows.length ? rows.map((b,i)=>`<div class="device-card"><b>${esc(b.name)}</b><span dir="ltr">@${esc(b.username.replace(/^@/,""))}</span><small>${esc(b.note || "بدون ملاحظات")}</small><div class="actions"><button class="btn-ghost" type="button" data-copy-bot="${i}">نسخ بيانات البوت</button><button class="btn-danger" type="button" data-remove-bot="${i}">حذف من القائمة</button></div></div>`).join("") : `<div class="empty-list">لسه مفيش بوتات في قائمتك. أنشئ بوت من BotFather ثم أضفه هنا للتنظيم.</div>`; };
-  const sh = settingsPage("مدير بوتات تيليجرام", "إدارة بوتك EStFather وتجهيز التكامل الآمن مع Telegram Bot API. لا تحفظ أي توكنات في الواجهة؛ لا تضع التوكن داخل المتصفح.", `
-    <div class="device-card"><b>البوت الأساسي: EStFather</b><span dir="ltr">@EStFather</span><small>تم تعيين الاسم الذي زودتني به كبوتك الأساسي. حالة الربط الفعلية تُفحص من الخادم عند ضبط متغيرات البيئة.</small><div class="actions"><button type="button" class="btn-primary" id="tgCheckConnection">فحص اتصال Telegram</button><a class="btn-ghost" href="https://t.me/EStFather" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-flex;align-items:center">فتح البوت ↗</a></div><div id="tgConnectionStatus" class="hint" role="status">لم يتم فحص الاتصال بعد.</div></div>
+  const sh = settingsPage("مدير بوتات تيليجرام", "إدارة بوتك ESFather وتجهيز التكامل الآمن مع Telegram Bot API. لا تحفظ أي توكنات في الواجهة؛ لا تضع التوكن داخل المتصفح.", `
+    <div class="device-card"><b>البوت الأساسي: ESFather</b><span dir="ltr">@ESFather</span><small>تم تعيين الاسم الذي زودتني به كبوتك الأساسي. حالة الربط الفعلية تُفحص من الخادم عند ضبط متغيرات البيئة.</small><div class="actions"><button type="button" class="btn-primary" id="tgCheckConnection">فحص اتصال Telegram</button><a class="btn-ghost" href="https://t.me/ESFather" target="_blank" rel="noopener noreferrer" style="text-decoration:none;display:inline-flex;align-items:center">فتح البوت ↗</a></div><div id="tgConnectionStatus" class="hint" role="status">لم يتم فحص الاتصال بعد.</div></div>
     <div class="panel-h">اختيار البوت المتصل بالخادم</div><div class="field"><label for="tgServerBotSelect">البوت الذي ستُطبّق عليه الإعدادات</label><select id="tgServerBotSelect"><option value="primary">البوت الأساسي</option></select></div><div class="actions"><button type="button" class="btn-ghost" id="tgReloadServerBots">تحديث قائمة البوتات المتصلة</button></div><div id="tgServerBotsStatus" class="hint" role="status">يتم تحميل البوتات المعرفة في إعدادات الخادم.</div>
     <div class="panel-h">حالة Webhook والتشخيص</div><div class="device-card"><small>اعرف هل تيليجرام يرسل التحديثات إلى Webhook، وعدد التحديثات المنتظرة وآخر خطأ مسجل. لا يتم عرض مسار Webhook كاملًا أو أي أسرار.</small><div class="actions"><button type="button" class="btn-primary" id="tgWebhookCheck">فحص حالة Webhook</button></div><div id="tgWebhookStatus" class="hint" role="status">اضغط للفحص المباشر من Telegram.</div></div>
     <div class="panel-h">لوحة صحة جميع البوتات</div><div class="device-card"><small>فحص مستقل لكل بوت معرف في إعدادات الخادم، مع إظهار حالة الاتصال وWebhook وآخر خطأ دون كشف التوكن أو مسار Webhook الكامل.</small><div class="actions"><button type="button" class="btn-primary" id="tgFleetDiagnostics">فحص جميع البوتات</button></div><div id="tgFleetStatus" class="hint" role="status">اضغط لبدء الفحص الشامل.</div><div id="tgFleetCards"></div></div>
@@ -1073,7 +1165,7 @@ help - Show help"></textarea></div><div class="actions"><button type="button" cl
   sh.querySelector("#tgReloadServerBots").onclick=loadServerBots; loadServerBots();
   const tgStatus = sh.querySelector("#tgManageStatus");
   const runTelegramAction = async (payload, success) => { tgStatus.textContent="جارٍ تنفيذ الطلب على Telegram…"; try { await telegramRequest(payload); tgStatus.textContent=success; toast(success); } catch(e) { tgStatus.textContent=`تعذر التنفيذ: ${e.message}`; } };
-  sh.querySelector("#tgCheckConnection").onclick=async()=>{const out=sh.querySelector("#tgConnectionStatus");out.textContent="جارٍ فحص الاتصال…";try{const data=await telegramRequest({action:"status"});out.textContent=`متصل بنجاح: @${data.bot.username} · ${data.bot.first_name||"EStFather"}`;toast("اتصال Telegram يعمل");}catch(e){out.textContent=e.message==="telegram not configured"?"الربط غير مُعد بعد. أضف متغيرات Telegram وFirebase إلى إعدادات Vercel ثم أعد النشر.":`تعذّر فحص الاتصال: ${e.message||"خطأ غير معروف"}`;}};
+  sh.querySelector("#tgCheckConnection").onclick=async()=>{const out=sh.querySelector("#tgConnectionStatus");out.textContent="جارٍ فحص الاتصال…";try{const data=await telegramRequest({action:"status"});out.textContent=`متصل بنجاح: @${data.bot.username} · ${data.bot.first_name||"ESFather"}`;toast("اتصال Telegram يعمل");}catch(e){out.textContent=e.message==="telegram not configured"?"الربط غير مُعد بعد. أضف متغيرات Telegram وFirebase إلى إعدادات Vercel ثم أعد النشر.":`تعذّر فحص الاتصال: ${e.message||"خطأ غير معروف"}`;}};
   sh.querySelector("#tgFleetDiagnostics").onclick=async()=>{const status=sh.querySelector("#tgFleetStatus"),cards=sh.querySelector("#tgFleetCards");status.textContent="جارٍ فحص كل البوتات المعرفة على الخادم…";cards.replaceChildren();try{const data=await telegramRequest({action:"fleetDiagnostics",botId:"primary"});const bots=data.bots||[];status.textContent=`اكتمل الفحص: ${bots.filter(b=>b.available).length} من ${bots.length} بوت متصل.`;for(const b of bots){const card=document.createElement("div");card.className="device-card";const title=document.createElement("b");title.textContent=b.username?`@${b.username} (${b.id})`:b.id;const line=document.createElement("small");if(!b.available)line.textContent=`الاتصال: فشل${b.error?" — "+b.error:""}`;else if(!b.webhook)line.textContent=`الاتصال: يعمل · تعذر قراءة Webhook${b.error?" — "+b.error:""}`;else{const w=b.webhook;const when=w.last_error_date?new Date(w.last_error_date*1000).toLocaleString():"لا يوجد خطأ مسجل";line.textContent=`الاتصال: يعمل · Webhook: ${w.configured?"مضبوط":"غير مضبوط"} · التحديثات المعلقة: ${w.pending_update_count} · المضيف: ${w.host||"—"} · آخر خطأ: ${when}${w.last_error_message?" — "+w.last_error_message:""}`;}card.append(title,line);cards.append(card);}}catch(e){status.textContent=`تعذر إكمال الفحص: ${e.message}`;}};
   sh.querySelector("#tgWebhookCheck").onclick=async()=>{const out=sh.querySelector("#tgWebhookStatus");out.textContent="جارٍ فحص حالة Webhook…";try{const data=await telegramRequest({action:"webhookInfo"});const w=data.webhook||{};const when=w.last_error_date?new Date(w.last_error_date*1000).toLocaleString():"لا يوجد خطأ مسجل";out.textContent=`الحالة: ${w.configured?"Webhook مضبوط":"لا يوجد Webhook مضبوط"} · التحديثات المنتظرة: ${w.pending_update_count} · ${w.host?"المضيف: "+w.host:"لا يوجد عنوان"} · آخر خطأ: ${when}${w.last_error_message?" — "+w.last_error_message:""}`;if(w.max_connections)out.textContent+=` · الاتصالات القصوى: ${w.max_connections}`;if(w.allowed_updates.length)out.textContent+=` · أنواع التحديثات: ${w.allowed_updates.join(", ")}`;}catch(e){out.textContent=`تعذر فحص Webhook: ${e.message}`;}};
   sh.querySelector("#tgSaveName").onclick=()=>{const value=sh.querySelector("#tgLiveName").value.trim();if(!value)return toast("اكتب اسم البوت أولًا");runTelegramAction({action:"setName",value},"تم تحديث اسم البوت على تيليجرام");};
@@ -1090,7 +1182,7 @@ help - Show help"></textarea></div><div class="actions"><button type="button" cl
 
 function openSettings() {
   const me = S.me;
-  const sh = settingsPage("مركز الإعدادات والخصوصية", "كل إعدادات ES Chat Pro في مكان واحد — من الحساب وحتى التخزين والأمان.", `<div class="settings-profile">${avatar(me)}<div><b>${esc(me.name)}${badge(me,18)}</b><small><bdi>@${esc(me.username||"")}</bdi></small></div><button class="btn-ghost" id="settingsEdit">تعديل</button></div><div class="settings-group"><div class="settings-group-title">الحساب والتحكم</div>${settingsRow("account","◉","الحساب","الاسم، الصورة، اسم المستخدم والنبذة")}${settingsRow("privacy","◆","الخصوصية والأمان","آخر ظهور، القراءة، التشفير والحظر")}${settingsRow("security","shield","أمان الحساب والجلسات","طريقة الدخول، نشاط الحساب وتسجيل الخروج")}${settingsRow("phone","☎","رقم الهاتف والعثور عليك",me.phonePublic?"العثور عليك بالرقم مفعّل":"اختياري — مخفي افتراضيًا")}${settingsRow("devices","▣","الأجهزة النشطة","جلسة التشفير الحالية وإدارة الأجهزة")}${settingsRow("botsManager","🤖","مدير البوتات","أنشئ بوتات لموقعك وتحكم في الرمز والأوامر والـ Webhook")}</div><div class="settings-group"><div class="settings-group-title">التطبيق والمحادثات</div>${settingsRow("chats","▤","إعدادات المحادثات","المجلدات، الرسائل، المعاينات والردود السريعة")}${settingsRow("notifications","◌","الإشعارات والأصوات","التنبيهات، المعاينة وساعات الهدوء")}${settingsRow("appearance","✦","المظهر","الألوان، الخلفية وحجم الخط")}${settingsRow("language","文","اللغة","العربية / English")}${settingsRow("data","◫","البيانات والتخزين","المسودات والملصقات وذاكرة الجهاز")}${settingsRow("power","◒","توفير الطاقة","الحركة والتنبيهات للأجهزة الضعيفة")}${settingsRow("about","ⓘ","عن ES Chat Pro","النسخة والخصوصية والدعم")}</div><div class="actions"><button class="btn-ghost" id="settingsAdvanced">الإعدادات المتقدمة</button><button class="btn-ghost" id="settingsOut">تسجيل الخروج</button></div>`);
+  const sh = settingsPage("مركز الإعدادات والخصوصية", "كل إعدادات ES Chat Pro في مكان واحد — من الحساب وحتى التخزين والأمان.", `<div class="settings-profile">${avatar(me)}<div><b>${esc(me.name)}${badge(me,18)}</b><small><bdi>@${esc(me.username||"")}</bdi></small></div><button class="btn-ghost" id="settingsEdit">تعديل</button></div><div class="settings-group"><div class="settings-group-title">الحساب والتحكم</div>${settingsRow("account","◉","الحساب","الاسم، الصورة، اسم المستخدم والنبذة")}${settingsRow("privacy","◆","الخصوصية والأمان","آخر ظهور، القراءة، التشفير والحظر")}${settingsRow("security","shield","أمان الحساب والجلسات","طريقة الدخول، نشاط الحساب وتسجيل الخروج")}${settingsRow("phone","☎","رقم الهاتف والعثور عليك",me.phonePublic?"العثور عليك بالرقم مفعّل":"اختياري — مخفي افتراضيًا")}${settingsRow("devices","▣","الأجهزة المرتبطة","اربط بوت بحسابك زي ربط جهاز في واتساب")}${settingsRow("botsManager","🤖","مدير بوتات ES Chat","أنشئ بوتات لموقعك وتحكم في الرمز والأوامر والـ Webhook")}${settingsRow("telegramBots","✈","مدير ESFather على Telegram","إدارة الحساب المستقل وإعداداته عبر Telegram Bot API")}</div><div class="settings-group"><div class="settings-group-title">التطبيق والمحادثات</div>${settingsRow("chats","▤","إعدادات المحادثات","المجلدات، الرسائل، المعاينات والردود السريعة")}${settingsRow("notifications","◌","الإشعارات والأصوات","التنبيهات، المعاينة وساعات الهدوء")}${settingsRow("appearance","✦","المظهر","الألوان، الخلفية وحجم الخط")}${settingsRow("language","文","اللغة","العربية / English")}${settingsRow("data","◫","البيانات والتخزين","المسودات والملصقات وذاكرة الجهاز")}${settingsRow("power","◒","توفير الطاقة","الحركة والتنبيهات للأجهزة الضعيفة")}${settingsRow("about","ⓘ","عن ES Chat Pro","النسخة والخصوصية والدعم")}</div><div class="actions"><button class="btn-ghost" id="settingsAdvanced">الإعدادات المتقدمة</button><button class="btn-ghost" id="settingsOut">تسجيل الخروج</button></div>`);
   sh.querySelector("#settingsEdit").onclick=openEdit;sh.querySelector("#settingsAdvanced").onclick=openSettingsAdvanced;sh.querySelector("#settingsOut").onclick=doSignOut;sh.querySelectorAll("[data-settings]").forEach(b=>b.onclick=()=>openSettingsSection(b.dataset.settings));return sh;
 }
 function openSettingsAdvanced() {
@@ -1634,6 +1726,7 @@ function renderMsgsPlain(docs) {
       if (m.img && String(m.img).startsWith("data:image/")) body += `<img class="mimg" src="${esc(m.img)}" alt="صورة" data-img>`;
       if (m.file && m.file.data && String(m.file.type || "").startsWith("audio/")) body += voiceHtml(m.file);
       else if (m.file && m.file.data) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="data:${esc(m.file.type || "application/octet-stream")};base64,${esc(m.file.data)}">${ic("file", 22)}<span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
+      else if (m.file && /^\/api\/es-bot-file\?file_id=[a-f0-9]{24}&key=[A-Za-z0-9_-]{32,80}$/.test(String(m.file.url || ""))) body += `<a class="mfile" download="${esc(m.file.name || "file")}" href="${esc(m.file.url)}">${ic("file", 22)}<span>${esc(m.file.name || "ملف")}</span><small>${Math.ceil((m.file.bytes || 0) / 1024)} KB</small></a>`;
       if (m.loc) body += `<a class="mloc" href="https://www.google.com/maps?q=${+m.loc.lat},${+m.loc.lng}" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg><span>موقع على الخريطة</span></a>`;
       if (shownText) body += `<div class="txt">${mentionHtml(shownText, c.type === "group" || c.type === "channel")}${m.editedAt ? ` <small class="edited-label">(تم التعديل)</small>` : ""}</div>`;
       if (shownText) body += linkCardHtml(shownText);
@@ -2203,7 +2296,9 @@ function mediaHtml(md, chatId) {
   const state = `${fail ? " fail" : ""}`, label = fail ? "غير متاح — اضغط للمحاولة" : size;
   if (md.kind === "img") {
     if (url) return `<img class="mimg" src="${esc(url)}" alt="صورة" data-img data-media="${id}">`;
-    const th = md.thumb && /^data:image\//.test(md.thumb) ? `--t:url(${md.thumb});` : "";
+    // thumb جاي من المرسل: لازم يكون data URL صورة بحروف base64 بس. قبل كده كان بيتفحص بالبادئة فقط فيقدر مرسل خبيث
+    // يقفل الـ style attribute ويحقن onmouseover/onerror (XSS عند كل مستلم).
+    const th = typeof md.thumb === "string" && md.thumb.length < 30000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(md.thumb) ? `--t:url(${md.thumb});` : "";
     return `<div class="mph${state}" data-media="${id}" data-dl="${id}" style="${th}aspect-ratio:${+md.w || 4}/${+md.h || 3}"><span class="mdl">${ic("download", 22)}<span class="mdl-t">${label}</span></span></div>`;
   }
   if (md.kind === "voice") {

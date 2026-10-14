@@ -37,6 +37,10 @@
   ],
   "rewrites": [
     {
+      "source": "/bot:token/:method",
+      "destination": "/api/es-bot?token=:token&method=:method"
+    },
+    {
       "source": "/",
       "has": [
         {

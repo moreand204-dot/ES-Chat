@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
     init();
     const m = /^Bearer\s+(.+)$/.exec(req.headers.authorization || "");
     if (!m) return res.status(401).json({ error: "auth" });
-    const u = await admin.auth().verifyIdToken(m[1]);
+    let u; try { u = await admin.auth().verifyIdToken(m[1]); } catch { return res.status(401).json({ error: "auth" }); }
     if (limited(u.uid, 12)) return res.status(429).json({ error: "rate" });
     const e = process.env;
     if (e.CF_TURN_KEY_ID && e.CF_TURN_API_TOKEN) {

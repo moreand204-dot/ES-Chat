@@ -7,6 +7,8 @@
   },
   "scripts": {
     "test:fuzzer": "node tools/es-fuzzer.mjs",
-    "test:bot-api": "node tools/bot-api.test.js"
+    "test:bot-api": "node tools/bot-api.test.js",
+    "test:link-device": "node tools/link-device.test.js",
+    "test:v77-security": "node tools/v77-security.test.js"
   }
 }
