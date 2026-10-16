@@ -14,7 +14,7 @@ window.__esBooted = true; // مراقب الإقلاع في index.html بيعت�
 /* ---------------- helpers ---------------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const S = { user: null, me: null, e2ee: { ready: false, error: "" }, users: new Map(), chats: [], chat: null, found: null, site: {}, groups: [], gseen: new Map(), seen: new Map(), unsub: {}, view: "boot", filter: "all", prefs: { pins: [], arch: [], hiddenChats: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] } };
+const S = { user: null, me: null, e2ee: { ready: false, error: "" }, users: new Map(), chats: [], chat: null, found: null, site: {}, groups: [], gseen: new Map(), seen: new Map(), unsub: {}, view: "boot", filter: "all", prefs: { pins: [], arch: [], hiddenChats: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] }, contacts: {}, contactNameByUid: new Map() };
 let CALL = null, callSeen = new Set();
 const STUN_ONLY = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }, ...(Array.isArray(CFG.ICE_SERVERS) ? CFG.ICE_SERVERS : [])];
 let _ice = null, _iceAt = 0;
@@ -88,7 +88,7 @@ async function acceptCall(id, data) {
     toast(e.name === "NotAllowedError" ? "اسمح للميكروفون والكاميرا من إعدادات المتصفح" : "تعذّر قبول المكالمة");
   }
 }
-async function showIncomingCall(id, data) { if (callSeen.has(id) || CALL) return; callSeen.add(id); if (LS.get("quiet_unknown", false)) { try { const a = await getDoc(doc(db,"chats",S.user.uid+"_"+data.caller)); const b = a.exists() ? a : await getDoc(doc(db,"chats",data.caller+"_"+S.user.uid)); if (!a.exists() && !b.exists()) { await updateDoc(doc(db,"calls",id),{state:"rejected",endedAt:serverTimestamp()}); toast("تم رفض مكالمة من حساب غير معروف"); return; } } catch (e) { console.warn("unknown caller check",e); await updateDoc(doc(db,"calls",id),{state:"rejected",endedAt:serverTimestamp()}).catch(()=>{}); toast("تعذّر التحقق من المتصل؛ تم رفض المكالمة احتياطيًا"); return; } } await ensureUsers([data.caller]); const u = S.users.get(data.caller) || {}; const sh = openModal(`<div class="menu"><div class="menu-h">مكالمة واردة</div><p class="sub">${esc(u.name || "مستخدم")} يريد بدء مكالمة ${data.kind === "video" ? "فيديو" : "صوتية"}.</p><div class="actions"><button class="btn-primary" id="acceptCall">قبول</button><button class="btn-danger" id="rejectCall">رفض</button></div></div>`); sh.querySelector("#acceptCall").onclick = () => { closeModal(); acceptCall(id, data); }; sh.querySelector("#rejectCall").onclick = async () => { await updateDoc(doc(db, "calls", id), { state: "rejected", endedAt: serverTimestamp() }).catch(() => {}); closeModal(); }; }
+async function showIncomingCall(id, data) { if (callSeen.has(id) || CALL) return; callSeen.add(id); if (LS.get("quiet_unknown", false)) { try { const a = await getDoc(doc(db,"chats",S.user.uid+"_"+data.caller)); const b = a.exists() ? a : await getDoc(doc(db,"chats",data.caller+"_"+S.user.uid)); if (!a.exists() && !b.exists()) { await updateDoc(doc(db,"calls",id),{state:"rejected",endedAt:serverTimestamp()}); toast("تم رفض مكالمة من حساب غير معروف"); return; } } catch (e) { console.warn("unknown caller check",e); await updateDoc(doc(db,"calls",id),{state:"rejected",endedAt:serverTimestamp()}).catch(()=>{}); toast("تعذّر التحقق من المتصل؛ تم رفض المكالمة احتياطيًا"); return; } } await ensureUsers([data.caller]); const u = S.users.get(data.caller) || {}; const sh = openModal(`<div class="menu"><div class="menu-h">مكالمة واردة</div><p class="sub">${esc(contactName(data.caller, u.name || "مستخدم"))} يريد بدء مكالمة ${data.kind === "video" ? "فيديو" : "صوتية"}.</p><div class="actions"><button class="btn-primary" id="acceptCall">قبول</button><button class="btn-danger" id="rejectCall">رفض</button></div></div>`); sh.querySelector("#acceptCall").onclick = () => { closeModal(); acceptCall(id, data); }; sh.querySelector("#rejectCall").onclick = async () => { await updateDoc(doc(db, "calls", id), { state: "rejected", endedAt: serverTimestamp() }).catch(() => {}); closeModal(); }; }
 function watchIncomingCalls() { if (S.unsub.incomingCalls) S.unsub.incomingCalls(); S.unsub.incomingCalls = onSnapshot(query(collection(db, "calls"), where("callee", "==", S.user.uid), limit(8)), snap => snap.docs.forEach(d => { const x = d.data(); if (x.state === "ringing" && (!x.expiresAt || toDate(x.expiresAt) > new Date())) showIncomingCall(d.id, x); }), () => {}); }
 const DEFAULT_PREFS = () => ({ pins: [], arch: [], hiddenChats: [], mute: [], block: [], labels: [], cl: {}, quick: [], stars: [] });
 try { const u = new URLSearchParams(location.search).get("u"); if (u) sessionStorage.es_u = u; const gp = new URLSearchParams(location.search).get("g"); if (gp) sessionStorage.es_g = gp; const cp = new URLSearchParams(location.search).get("c"); if (cp) sessionStorage.es_c = cp; const kp = new URLSearchParams(location.search).get("k"); if (kp && gp) sessionStorage.es_k = gp + "." + kp; const ap = new URLSearchParams(location.search).get("ai"); if (ap) sessionStorage.es_ai = ap; } catch {}
@@ -822,7 +822,7 @@ const ACCENTS = [["blue", "#2f6bff", "أزرق"], ["violet", "#8b5cf6", "بنف�
 const WALLS = [["dots", "نقط"], ["grid", "شبكة"], ["none", "سادة"]];
 function applyTheme() { const r = document.documentElement; r.dataset.accent = LS.get("accent", "blue"); r.dataset.wp = LS.get("wp", "dots"); r.dataset.fs = LS.get("fs", "m"); r.dataset.dens = LS.get("dens", "n"); r.dataset.motion = LS.get("motion", true) ? "on" : "off"; }
 applyTheme();
-const ROW_IC = { botsManager: "bot", telegramBots: "bot", security: "shield", privacyCalls: "phone", privacyContacts: "block", privacyLock: "lock", privacyAdvanced: "sliders", privacyCheckup: "shield", folders: "folder", quick: "bolt", stars: "star", chatMedia: "image", drafts: "edit", account: "user", privacy: "shield", devices: "device", chats: "chat", notifications: "bell", appearance: "palette", language: "globe", data: "database", power: "battery", about: "info", storage: "pie", adMobile: "signal", adWifi: "wifi" };
+const ROW_IC = { botsManager: "bot", telegramBots: "bot", contactsBook: "user", security: "shield", privacyCalls: "phone", privacyContacts: "block", privacyLock: "lock", privacyAdvanced: "sliders", privacyCheckup: "shield", folders: "folder", quick: "bolt", stars: "star", chatMedia: "image", drafts: "edit", account: "user", privacy: "shield", devices: "device", chats: "chat", notifications: "bell", appearance: "palette", language: "globe", data: "database", power: "battery", about: "info", storage: "pie", adMobile: "signal", adWifi: "wifi" };
 const settingsRow = (id, icon, title, sub = "") => `<button type="button" class="settings-row" data-settings="${id}"><span class="settings-row-icon">${ic(ROW_IC[id] || "sliders", 22)}</span><span class="settings-row-copy"><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="settings-row-arrow">${ic("chev", 18)}</span></button>`;
 function settingsPage(title, sub, html) {
   return openModal(`<div class="settings-page-head"><div class="settings-kicker">ES CHAT PRO · CONTROL CENTER</div><h2>${title}</h2><p>${sub}</p></div>${html}`, false, true);
@@ -832,6 +832,7 @@ function openSettingsSection(id) {
   if (id === "account") return openEdit();
   if (id === "telegramBots") return openTelegramBots();
   if (id === "botsManager") return openBotsManager();
+  if (id === "contactsBook") return openContacts();
   if (id === "security") {
     const u = S.user || {};
     const providers = (u.providerData || []).map(p => p.providerId === "google.com" ? "Google" : p.providerId).filter(Boolean);
@@ -903,7 +904,7 @@ function openSettingsSection(id) {
   if (id === "adWifi") return adPage("wifi");
   if (id === "hiddenChats") {
     const ids = [...new Set(S.prefs.hiddenChats || [])];
-    const rows = ids.map(id => { const c = S.chats.find(x => x.id === id); const peer = c && c._t === "dm" ? peerOf(c) : ""; const u = peer ? (S.users.get(peer) || {}) : {}; return `<div class="device-card"><b>${esc(u.name || (c && c.name) || "محادثة مخفية")}</b><small>${esc(id)}</small><button type="button" class="btn-ghost" data-restore-hidden="${esc(id)}">إرجاع لقائمة المحادثات</button></div>`; }).join("");
+    const rows = ids.map(id => { const c = S.chats.find(x => x.id === id); const peer = c && c._t === "dm" ? peerOf(c) : ""; const u = peer ? (S.users.get(peer) || {}) : {}; return `<div class="device-card"><b>${esc((peer && contactName(peer, "")) || u.name || (c && c.name) || "محادثة مخفية")}</b><small>${esc(id)}</small><button type="button" class="btn-ghost" data-restore-hidden="${esc(id)}">إرجاع لقائمة المحادثات</button></div>`; }).join("");
     const sh = settingsPage("المحادثات المخفية", "إخفاء الشات لا يحذف الرسائل المشتركة. تقدر ترجّع أي محادثة لقائمتك من هنا.", `${rows || '<div class="empty-list">مفيش محادثات مخفية.</div>'}`);
     sh.querySelectorAll("[data-restore-hidden]").forEach(btn => btn.onclick = async () => { const id = btn.dataset.restoreHidden; const old = [...(S.prefs.hiddenChats || [])]; const next = old.filter(x => x !== id); btn.disabled = true; S.prefs = { ...S.prefs, hiddenChats: next }; try { await setDoc(prefsRef(), { hiddenChats: next }, { merge: true }); renderList(); toast("رجعت المحادثة لقائمتك"); openSettingsSection("hiddenChats"); } catch { S.prefs = { ...S.prefs, hiddenChats: old }; btn.disabled = false; toast("تعذّر الحفظ؛ جرّب تاني"); } });
     return sh;
@@ -1022,6 +1023,7 @@ async function openBotsManager() {
     } catch (e) { body.innerHTML = `<div class="empty-list">تعذّر تحميل البوتات. اتأكد إن firestore.rules منشورة.</div>`; return; }
     rows.sort((a, b) => ((b.createdAt && b.createdAt.seconds) || 0) - ((a.createdAt && a.createdAt.seconds) || 0));
     body.innerHTML = `<div id="bmFresh"></div>
+      <div class="device-card"><b>ESFather</b><small>بوتك الخاص جوه موقعك — محادثة خاصة مشفّرة (E2EE) زي أي شات عادي، بدون أي علاقة بتيليجرام.</small><div class="actions"><button type="button" class="btn-primary" id="bmOpenESFather">فتح البوت</button></div></div>
       <div class="panel-h">إنشاء بوت جديد</div>
       <div class="field"><label for="bmName">اسم البوت</label><input type="text" id="bmName" maxlength="40" placeholder="مثال: بوت الدعم" autocomplete="off"></div>
       <div class="actions"><button type="button" class="btn-primary" id="bmCreate">إنشاء بوت</button></div>
@@ -1036,7 +1038,10 @@ async function openBotsManager() {
       try { const d = await botApi({ action: "create", name }); fresh = { name: d.bot.name, token: d.token }; await render(); toast("اتعمل البوت"); }
       catch (er) { msg.textContent = botErr(er); btn.disabled = false; }
     };
-    body.onclick = e => { const r = e.target.closest("[data-bot]"); if (r) { fresh = null; openBotDetail(r.dataset.bot, render); } };
+    body.onclick = e => {
+      const r = e.target.closest("[data-bot]"); if (r) { fresh = null; openBotDetail(r.dataset.bot, render); return; }
+      const esf = e.target.closest("#bmOpenESFather"); if (esf) { esf.disabled = true; openBotPM().finally(() => { esf.disabled = false; }); }
+    };
   };
   render();
 }
@@ -1049,6 +1054,7 @@ async function openBotDetail(bid, onChange) {
   const sh = settingsPage(esc(b.name), `<bdi>@${esc(b.id)}</bdi> · <span id="bdState">${b.active ? "شغّال" : "موقوف"}</span>`, `
     <div id="bdSecret"></div>
     <div class="device-card"><b>الرمز السري</b><small dir="ltr">${esc(b.tokenPrefix || "esb_live_")}…</small><small>الرمز بيظهر مرة واحدة عند إصداره، والخادم بيخزن بصمته بس. لو ضاع أصدر رمز جديد (القديم بيتلغي).</small><div class="actions"><button type="button" class="btn-primary" id="bdRotate">إصدار رمز جديد</button><button type="button" class="btn-ghost" id="bdToggle">${b.active ? "إيقاف البوت" : "تشغيل البوت"}</button></div></div>
+    <div class="device-card"><b>محادثة خاصة مشفّرة</b><small>افتح شات خاص مع البوت ده جوه موقعك — نفس تشفير الشات الخاص العادي (E2EE)، البوت عنده مفتاحه الخاص بس.</small><div class="actions"><button type="button" class="btn-primary" id="bdOpenPM">فتح البوت</button></div></div>
     <div class="panel-h">الاسم</div>
     <div class="field"><label for="bdUser">اسم المستخدم @username</label><input type="text" id="bdUser" maxlength="20" dir="ltr" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="mybot_name" value="${esc(b.username && !/^[0-9a-f]{18}$/.test(b.username) ? b.username : "")}"><small class="hint">3-20 حرف، يبدأ بحرف، أرقام وشرطة سفلية فقط. فريد لكل بوت.</small></div>
     <div class="actions"><button type="button" class="btn-primary" id="bdSaveUser">حفظ الـ Username</button></div>
@@ -1089,6 +1095,7 @@ X-ES-Bot-Token: esb_live_...
   const run = async (btn, fn, ok) => { btn.disabled = true; try { await fn(); if (onChange) onChange(); if (ok) toast(ok); } catch (er) { toast(botErr(er)); } btn.disabled = false; };
   $$("#bdStatsLoad").onclick = async e => { const view = $$("#bdStatsView"), log = $$("#bdStatsLog"); e.currentTarget.disabled = true; view.textContent = "جارٍ تحميل الإحصائيات…"; try { const d = await botApi({ action: "stats", botId: b.id }); const x = d.stats || {}; view.textContent = `التحديثات: ${x.updates || 0} · الرسائل: ${x.messages || 0} · الأوامر: ${x.commands || 0} · الأزرار: ${x.callbacks || 0} · Webhook ناجح: ${x.webhookSuccess || 0} · أخطاء Webhook: ${x.webhookErrors || 0}`; log.innerHTML = (d.logs || []).slice(0, 20).map(l => `<div class="row-item"><div class="meta"><b>${esc(l.type || "event")}</b><small>${esc(l.status || "received")}${l.detail ? " · " + esc(l.detail) : ""}</small></div></div>`).join("") || `<small>لا توجد سجلات بعد.</small>`; } catch (er) { view.textContent = botErr(er); } e.currentTarget.disabled = false; };
   $$("#bdRotate").onclick = e => { if (!confirm("إصدار رمز جديد هيلغي الرمز القديم فورًا. تكمل؟")) return; run(e.currentTarget, async () => { const d = await botApi({ action: "token", botId: b.id }); showBotSecret($$("#bdSecret"), "الرمز الجديد", d.token); $$("#bdSecret").scrollIntoView({ block: "nearest" }); }, "اتصدر رمز جديد"); };
+  $$("#bdOpenPM").onclick = e => { e.currentTarget.disabled = true; openBotPM(b.id).finally(() => { e.currentTarget.disabled = false; }); };
   $$("#bdToggle").onclick = e => run(e.currentTarget, async () => { const d = await botApi({ action: b.active ? "disable" : "enable", botId: b.id }); b.active = d.active; $$("#bdState").textContent = b.active ? "شغّال" : "موقوف"; $$("#bdToggle").textContent = b.active ? "إيقاف البوت" : "تشغيل البوت"; }, "اتحدّثت الحالة");
   $$("#bdSaveUser").onclick = e => {
     const msg = $$("#bdUserMsg");
@@ -1130,7 +1137,7 @@ function openTelegramBots() {
   const key = "es_telegram_bot_catalog_v1";
   const readBots = () => { try { const x = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(x) ? x.filter(b => b && typeof b.name === "string" && typeof b.username === "string").slice(0, 50) : []; } catch { return []; } };
   const writeBots = rows => localStorage.setItem(key, JSON.stringify(rows.slice(0, 50)));
-  const ensurePrimaryBot = () => { const rows = readBots(); if (!rows.some(b => b.username.toLowerCase() === "estfather")) { rows.unshift({name:"ESFather",username:"ESFather",note:"البوت الأساسي للمشروع — الربط المباشر يتطلب إعداد الخادم الآمن",primary:true,addedAt:new Date().toISOString()}); writeBots(rows); } };
+  const ensurePrimaryBot = () => { const rows = readBots(); if (!rows.some(b => b.username.toLowerCase() === "estfather")) { rows.unshift({name:"ESFather",username:"ESFather",note:"البوت الأساسي للمشروع — الربط المباشر يتطلب إعداد الخادم الآمن",primary:true,addedAt:new Date().toISOString()}); writeBots(rows); } }; 
   ensurePrimaryBot();
   const botRows = () => { const rows = readBots(); return rows.length ? rows.map((b,i)=>`<div class="device-card"><b>${esc(b.name)}</b><span dir="ltr">@${esc(b.username.replace(/^@/,""))}</span><small>${esc(b.note || "بدون ملاحظات")}</small><div class="actions"><button class="btn-ghost" type="button" data-copy-bot="${i}">نسخ بيانات البوت</button><button class="btn-danger" type="button" data-remove-bot="${i}">حذف من القائمة</button></div></div>`).join("") : `<div class="empty-list">لسه مفيش بوتات في قائمتك. أنشئ بوت من BotFather ثم أضفه هنا للتنظيم.</div>`; };
   const sh = settingsPage("مدير بوتات تيليجرام", "إدارة بوتك ESFather وتجهيز التكامل الآمن مع Telegram Bot API. لا تحفظ أي توكنات في الواجهة؛ لا تضع التوكن داخل المتصفح.", `
@@ -1182,7 +1189,7 @@ help - Show help"></textarea></div><div class="actions"><button type="button" cl
 
 function openSettings() {
   const me = S.me;
-  const sh = settingsPage("مركز الإعدادات والخصوصية", "كل إعدادات ES Chat Pro في مكان واحد — من الحساب وحتى التخزين والأمان.", `<div class="settings-profile">${avatar(me)}<div><b>${esc(me.name)}${badge(me,18)}</b><small><bdi>@${esc(me.username||"")}</bdi></small></div><button class="btn-ghost" id="settingsEdit">تعديل</button></div><div class="settings-group"><div class="settings-group-title">الحساب والتحكم</div>${settingsRow("account","◉","الحساب","الاسم، الصورة، اسم المستخدم والنبذة")}${settingsRow("privacy","◆","الخصوصية والأمان","آخر ظهور، القراءة، التشفير والحظر")}${settingsRow("security","shield","أمان الحساب والجلسات","طريقة الدخول، نشاط الحساب وتسجيل الخروج")}${settingsRow("phone","☎","رقم الهاتف والعثور عليك",me.phonePublic?"العثور عليك بالرقم مفعّل":"اختياري — مخفي افتراضيًا")}${settingsRow("devices","▣","الأجهزة المرتبطة","اربط بوت بحسابك زي ربط جهاز في واتساب")}${settingsRow("botsManager","🤖","مدير بوتات ES Chat","أنشئ بوتات لموقعك وتحكم في الرمز والأوامر والـ Webhook")}${settingsRow("telegramBots","✈","مدير ESFather على Telegram","إدارة الحساب المستقل وإعداداته عبر Telegram Bot API")}</div><div class="settings-group"><div class="settings-group-title">التطبيق والمحادثات</div>${settingsRow("chats","▤","إعدادات المحادثات","المجلدات، الرسائل، المعاينات والردود السريعة")}${settingsRow("notifications","◌","الإشعارات والأصوات","التنبيهات، المعاينة وساعات الهدوء")}${settingsRow("appearance","✦","المظهر","الألوان، الخلفية وحجم الخط")}${settingsRow("language","文","اللغة","العربية / English")}${settingsRow("data","◫","البيانات والتخزين","المسودات والملصقات وذاكرة الجهاز")}${settingsRow("power","◒","توفير الطاقة","الحركة والتنبيهات للأجهزة الضعيفة")}${settingsRow("about","ⓘ","عن ES Chat Pro","النسخة والخصوصية والدعم")}</div><div class="actions"><button class="btn-ghost" id="settingsAdvanced">الإعدادات المتقدمة</button><button class="btn-ghost" id="settingsOut">تسجيل الخروج</button></div>`);
+  const sh = settingsPage("مركز الإعدادات والخصوصية", "كل إعدادات ES Chat Pro في مكان واحد — من الحساب وحتى التخزين والأمان.", `<div class="settings-profile">${avatar(me)}<div><b>${esc(me.name)}${badge(me,18)}</b><small><bdi>@${esc(me.username||"")}</bdi></small></div><button class="btn-ghost" id="settingsEdit">تعديل</button></div><div class="settings-group"><div class="settings-group-title">الحساب والتحكم</div>${settingsRow("account","◉","الحساب","الاسم، الصورة، اسم المستخدم والنبذة")}${settingsRow("privacy","◆","الخصوصية والأمان","آخر ظهور، القراءة، التشفير والحظر")}${settingsRow("security","shield","أمان الحساب والجلسات","طريقة الدخول، نشاط الحساب وتسجيل الخروج")}${settingsRow("phone","☎","رقم الهاتف والعثور عليك",me.phonePublic?"العثور عليك بالرقم مفعّل":"اختياري — مخفي افتراضيًا")}${settingsRow("contactsBook","◎","جهات الاتصال",`${Object.keys(S.contacts||{}).length} جهة — أضف بالاسم ورقم الهاتف`)}${settingsRow("devices","▣","الأجهزة المرتبطة","اربط بوت بحسابك زي ربط جهاز في واتساب")}${settingsRow("botsManager","🤖","مدير بوتات ES Chat","أنشئ بوتات لموقعك وتحكم في الرمز والأوامر والـ Webhook")}${settingsRow("telegramBots","✈","مدير ESFather على Telegram","إدارة الحساب المستقل وإعداداته عبر Telegram Bot API")}</div><div class="settings-group"><div class="settings-group-title">التطبيق والمحادثات</div>${settingsRow("chats","▤","إعدادات المحادثات","المجلدات، الرسائل، المعاينات والردود السريعة")}${settingsRow("notifications","◌","الإشعارات والأصوات","التنبيهات، المعاينة وساعات الهدوء")}${settingsRow("appearance","✦","المظهر","الألوان، الخلفية وحجم الخط")}${settingsRow("language","文","اللغة","العربية / English")}${settingsRow("data","◫","البيانات والتخزين","المسودات والملصقات وذاكرة الجهاز")}${settingsRow("power","◒","توفير الطاقة","الحركة والتنبيهات للأجهزة الضعيفة")}${settingsRow("about","ⓘ","عن ES Chat Pro","النسخة والخصوصية والدعم")}</div><div class="actions"><button class="btn-ghost" id="settingsAdvanced">الإعدادات المتقدمة</button><button class="btn-ghost" id="settingsOut">تسجيل الخروج</button></div>`);
   sh.querySelector("#settingsEdit").onclick=openEdit;sh.querySelector("#settingsAdvanced").onclick=openSettingsAdvanced;sh.querySelector("#settingsOut").onclick=doSignOut;sh.querySelectorAll("[data-settings]").forEach(b=>b.onclick=()=>openSettingsSection(b.dataset.settings));return sh;
 }
 function openSettingsAdvanced() {
@@ -1324,10 +1331,11 @@ addEventListener("pagehide", beat);
 const GDSIG = new Map();
 function enterApp() {
   show("app"); paintMe();
-  ["users", "chats", "prefs", "groups"].forEach(k => { if (S.unsub[k]) S.unsub[k](); }); clearInterval(S.beatT); clearInterval(S.tickT);
+  ["users", "chats", "prefs", "groups", "contacts"].forEach(k => { if (S.unsub[k]) S.unsub[k](); }); clearInterval(S.beatT); clearInterval(S.tickT);
   $("#ownerBtn").innerHTML = CROWN; $("#ownerBtn").classList.add("owner");
   S.chats = []; S.chatsLoaded = false; S.seen = new Map();
   S.unsub.prefs = onSnapshot(doc(db, "users", S.user.uid, "data", "prefs"), s => { S.prefs = { ...DEFAULT_PREFS(), ...(s.data() || {}) }; renderList(); if (S.chat) { applyComposerState(); paintHead(); } }, () => {});
+  S.unsub.contacts = onSnapshot(doc(db, "users", S.user.uid, "data", "contacts"), s => applyContactsDoc(s.data() || {}), () => {});
   S.unsub.chats = onSnapshot(query(collection(db, "chats"), where("members", "array-contains", S.user.uid)), async snap => {
     S.chats = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.lastAt);
     if (snap.metadata.fromCache && !S.chatsLoaded) { await ensureUsers(S.chats.map(peerOf)); renderList(); return; }
@@ -1425,7 +1433,7 @@ async function doSearch() {
 const dmId = peer => [S.user.uid, peer].sort().join("_");
 const ttlLabel = s => ({ 86400: "24 ساعة", 604800: "7 أيام", 7776000: "90 يوم" }[s] || "");
 const LABEL_COLORS = ["#4be0a0", "#ffd166", "#ff5c7a", "#2f6bff", "#b07cff", "#ff9f43"];
-const nameOf = uid => uid === S.user.uid ? "أنت" : ((S.users.get(uid) || {}).name || "مستخدم");
+const nameOf = uid => uid === S.user.uid ? "أنت" : contactName(uid, (S.users.get(uid) || {}).name || "مستخدم");
 function linkifyHtml(safe) {
   return safe.replace(/(https?:\/\/[^\s<]+)/gi, raw => {
     let url = raw, tail = ""; const m = url.match(/[).,;:!?؟،]+$/); if (m) { tail = m[0]; url = url.slice(0, -tail.length); }
@@ -1508,6 +1516,94 @@ function renderChannelsTab() {
   $("#list")._h = ""; $("#list").innerHTML = h; paintTabs();
 }
 let rlT = 0, rlLast = 0;
+/* ---------------- جهات الاتصال (زي دفتر العناوين في واتساب/تيليجرام) ----------------
+ * users/{uid}/data/contacts → { list: { [phone]: { name, phone, uid|null, addedAt } } }
+ * phone هو المفتاح عشان يمنع تكرار نفس الرقم تلقائيًا. uid بيتملى لو الرقم ده مسجل وفعّل
+ * "العثور عليه بالرقم"، وبيفضل null لو مش مسجل لسه (أو مسجل بس مخفي رقمه). */
+const contactsRef = () => doc(db, "users", S.user.uid, "data", "contacts");
+function applyContactsDoc(d) {
+  S.contacts = d.list || {};
+  S.contactNameByUid = new Map(Object.values(S.contacts).filter(c => c.uid).map(c => [c.uid, c.name]));
+  renderList(); if (S.chat) paintHead();
+}
+const contactName = (uid, fallback) => S.contactNameByUid.get(uid) || fallback;
+const normPhone = s => String(s || "").trim().replace(/[\s().-]/g, "");
+const validPhone = p => /^\+[1-9]\d{7,14}$/.test(p);
+async function lookupPhoneUid(phone) { try { const s = await getDoc(doc(db, "phoneNumbers", phone)); return s.exists() ? s.data().uid : null; } catch { return null; } }
+async function addContact(name, phoneRaw) {
+  name = String(name || "").trim().slice(0, 40); const phone = normPhone(phoneRaw);
+  if (!name) { toast("اكتب اسم للشخص"); return false; }
+  if (!validPhone(phone)) { toast("اكتب الرقم بصيغة دولية زي ‎+201xxxxxxxxx"); return false; }
+  if (S.me && phone === normPhone(S.me.phone)) { toast("ده رقمك إنت"); return false; }
+  const uid = await lookupPhoneUid(phone);
+  await setDoc(contactsRef(), { list: { [phone]: { name, phone, uid: uid === S.user.uid ? null : uid, addedAt: Date.now() } } }, { merge: true });
+  toast(uid ? "اتضافت! هو موجود على الموقع، تقدر تكلمه دلوقتي" : "اتضافت — لسه مش مسجل بالرقم ده، تقدر تبعتله دعوة");
+  return true;
+}
+async function renameContact(phone, newName) {
+  newName = String(newName || "").trim().slice(0, 40); if (!newName) { toast("اكتب اسم"); return; }
+  await updateDoc(contactsRef(), { [`list.${phone}.name`]: newName }).catch(() => {});
+}
+async function deleteContact(phone) { await updateDoc(contactsRef(), { [`list.${phone}`]: deleteField() }).catch(() => {}); }
+// نعيد فحص أرقام جهات الاتصال اللي لسه مش متطابقة (زي ما واتساب بيعمل "مزامنة" لما تفتح الشاشة) —
+// من غير Cloud Functions، أبسط طريقة موثوقة هي إعادة الفحص وقت ما المستخدم يفتح شاشة جهات الاتصال.
+async function refreshContactMatches() {
+  const unmatched = Object.values(S.contacts).filter(c => !c.uid).slice(0, 60);
+  if (!unmatched.length) return;
+  const found = await Promise.all(unmatched.map(c => lookupPhoneUid(c.phone)));
+  const patch = {}; found.forEach((uid, i) => { if (uid && uid !== S.user.uid) patch[`list.${unmatched[i].phone}.uid`] = uid; });
+  if (Object.keys(patch).length) await updateDoc(contactsRef(), patch).catch(() => {});
+}
+function inviteContact(phone, name) {
+  const link = location.origin + "/";
+  const msg = `يلا بينا على ES Chat 👋 سجّل من هنا: ${link}`;
+  if (navigator.share) { navigator.share({ title: "دعوة لـ ES Chat", text: msg, url: link }).catch(() => {}); return; }
+  const a = document.createElement("a"); a.href = `sms:${encodeURIComponent(phone)}${/iPhone|iPad|iPod/.test(navigator.userAgent) ? "&" : "?"}body=${encodeURIComponent(msg)}`; a.click();
+}
+function openContacts() {
+  let render;
+  refreshContactMatches().then(() => render && render());
+  ensureUsers(Object.values(S.contacts).filter(c => c.uid).map(c => c.uid)).then(ok => ok && render && render());
+  render = () => {
+    const list = Object.values(S.contacts).sort((a, b) => (a.name || "").localeCompare(b.name || "", "ar"));
+    const rows = list.length ? list.map(c => `<div class="row-item" data-c="${esc(c.phone)}">${avatar(c.uid ? (S.users.get(c.uid) || {}) : { name: c.name })}<div class="meta"><div class="name">${esc(c.name)}</div><small dir="ltr">${esc(c.phone)}${c.uid ? " · على ES Chat" : " · لسه مش مسجل"}</small></div><div class="end">${c.uid ? `<button class="btn-mini" data-msg="${esc(c.uid)}">مراسلة</button>` : `<button class="btn-mini ghost" data-inv="${esc(c.phone)}">دعوة</button>`}<button class="btn-mini ghost" data-ren="${esc(c.phone)}">${ic("edit", 14)}</button><button class="btn-danger sm" data-del="${esc(c.phone)}">حذف</button></div></div>`).join("") : `<div class="empty-list">مفيش جهات اتصال لسه. ضيف حد بالاسم ورقم الهاتف.</div>`;
+    const sh = settingsPage("جهات الاتصال", "ضيف اسم ورقم هاتف — لو الشخص موجود على الموقع تقدر تكلمه فورًا، ولو لسه مسجلش تقدر تبعتله دعوة.", `
+      <div class="field"><label for="cName">الاسم</label><input id="cName" maxlength="40" placeholder="مثلاً: ماما، أحمد الجار..."></div>
+      <div class="field"><label for="cPhone">رقم الهاتف</label><input id="cPhone" dir="ltr" placeholder="+201xxxxxxxxx"></div>
+      <button type="button" class="btn-primary" id="cAdd">إضافة جهة اتصال</button>
+      <div class="panel-h">جهاتك (${list.length})</div>${rows}`);
+    sh.querySelector("#cAdd").onclick = async () => {
+      const btn = sh.querySelector("#cAdd"); btn.disabled = true;
+      const ok = await addContact(sh.querySelector("#cName").value, sh.querySelector("#cPhone").value);
+      btn.disabled = false; if (ok) { sh.querySelector("#cName").value = ""; sh.querySelector("#cPhone").value = ""; render(); }
+    };
+    sh.onclick = e => {
+      const msg = e.target.closest("[data-msg]"); if (msg) { closeModal(); openChat(msg.dataset.msg); return; }
+      const inv = e.target.closest("[data-inv]"); if (inv) { const row = inv.closest("[data-c]"); inviteContact(inv.dataset.inv, (S.contacts[row.dataset.c] || {}).name); return; }
+      const ren = e.target.closest("[data-ren]"); if (ren) { const phone = ren.closest("[data-c]").dataset.c, cur = (S.contacts[phone] || {}).name || ""; const n = prompt("الاسم الجديد:", cur); if (n && n.trim()) renameContact(phone, n).then(render); return; }
+      const del = e.target.closest("[data-del]"); if (del) { if (confirm("تمسح جهة الاتصال دي؟")) deleteContact(del.dataset.del).then(render); }
+    };
+  };
+  render();
+}
+
+// زرار سريع (أيقونة شات) في أعلى القايمة — بيعرض بس جهات الاتصال اللي فعلاً مسجّلة في الموقع
+// (رقمها اتلقى في phoneNumbers)، عشان توصل لمراسلتهم بضغطة واحدة من غير ما تفوّت على شاشة
+// الإعدادات الكاملة. بيعيد الفحص (refreshContactMatches) كل ما تفتحه عشان تبقى محدّثة.
+async function openRegisteredContacts() {
+  await refreshContactMatches();
+  const matched = Object.values(S.contacts).filter(c => c.uid);
+  await ensureUsers(matched.map(c => c.uid));
+  const rows = matched.length ? matched.sort((a, b) => a.name.localeCompare(b.name, "ar")).map(c => { const u = S.users.get(c.uid) || { name: c.name }; return `<div class="row-item" data-open="${esc(c.uid)}">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}<div class="meta"><div class="name">${esc(c.name)}</div><small dir="ltr">${esc(c.phone)}</small></div><div class="end"><button class="btn-mini" data-open="${esc(c.uid)}">مراسلة</button></div></div>`; }).join("")
+    : `<div class="empty-list">لسه مفيش جهات اتصال بتاعتك مسجّلة بالرقم على الموقع.<br>ضيف جهات اتصال وارجع افتح هنا تاني.</div>`;
+  const sh = openModal(`<div class="menu"><div class="menu-h">جهات الاتصال المسجّلة (${matched.length})</div>${rows}<button type="button" class="btn-ghost" id="rcAll">كل جهات الاتصال وإضافة واحدة جديدة</button></div>`, true);
+  sh.onclick = e => {
+    const op = e.target.closest("[data-open]"); if (op) { closeModal(); openChat(op.dataset.open); return; }
+    if (e.target.closest("#rcAll")) { closeModal(); openContacts(); }
+  };
+}
+$("#contactsQuickBtn").onclick = openRegisteredContacts;
+
 function renderList() {
   const now = Date.now(); clearTimeout(rlT);
   if (now - rlLast > 90) { rlLast = now; renderListNow(); }
@@ -1526,7 +1622,7 @@ function renderListNow() {
   if (term) {
     h += `<div class="section">نتيجة البحث</div>`;
     const r = S.found;
-    if (r && r.uid) h += `<div class="chat-item" data-open="${esc(r.uid)}">${avatar(r.u)}<div class="chat-meta"><div class="row1"><div class="name">${esc(r.u.name)}${badge(r.u, 15)}</div></div><div class="row2"><div class="preview"><bdi>@${esc(r.u.username)}</bdi></div></div></div></div>`;
+    if (r && r.uid) h += `<div class="chat-item" data-open="${esc(r.uid)}">${avatar(r.u)}<div class="chat-meta"><div class="row1"><div class="name">${esc(contactName(r.uid, r.u.name))}${badge(r.u, 15)}</div></div><div class="row2"><div class="preview"><bdi>@${esc(r.u.username)}</bdi></div></div></div></div>`;
     else if (r && r.g) h += `<div class="chat-item" data-open="g:${esc(r.g.id)}">${gAvatar(r.g)}<div class="chat-meta"><div class="row1"><div class="name">${esc(r.g.name)}</div></div><div class="row2"><div class="preview">${r.g.kind === "channel" ? "قناة" : "مجموعة"} · ${gCount(r.g)}</div></div></div></div>`;
     else if (r && r.self) h += `<div class="empty-list">ده اليوزر بتاعك</div>`;
     else if (r && r.none) h += `<div class="empty-list">مفيش نتايج. اتأكد إن الاسم مكتوب صح.</div>`;
@@ -1550,7 +1646,7 @@ function renderListNow() {
     const pid = peerOf(c), u = S.users.get(pid) || { name: "مستخدم" }, n = um[c.id] || 0, muted = P.mute.includes(c.id);
     const dots = (P.cl[c.id] || []).map(id => P.labels.find(l => l.id === id)).filter(Boolean).map(l => `<i class="ldot" style="background:${esc(l.c)}"></i>`).join("");
     return `<div class="chat-item ${S.chat && S.chat.peer === pid ? "active" : ""} ${n ? "has-unread" : ""}" data-open="${esc(pid)}" data-chat="1"><div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div>
-      <div class="chat-meta"><div class="row1"><div class="name">${esc(u.name)}${badge(u, 15)}${dots}</div><span class="when">${esc(listTime(c.lastAt))}</span></div>
+      <div class="chat-meta"><div class="row1"><div class="name">${esc(contactName(pid, u.name))}${badge(u, 15)}${dots}</div><span class="when">${esc(listTime(c.lastAt))}</span></div>
       <div class="row2"><div class="preview">${c.lastUid === S.user.uid ? "أنت: " : ""}${esc(dmPrev(c))}</div>${P.pins.includes(c.id) ? PIN : ""}${muted ? MUTE : ""}${n ? `<b class="unread ${muted ? "muted" : ""}">${n > 99 ? "99+" : n}</b>` : ""}</div></div></div>`;
   }).join("") : `<div class="empty-list">${f === "all" ? "مفيش محادثات لسه.<br>اطلب من صاحبك الـ @username بتاعه وابحث بيه فوق." : "مفيش محادثات هنا."}</div>`;
   const lst = $("#list"); if (lst._h !== h) { lst._h = h; lst.innerHTML = h; }
@@ -1601,7 +1697,7 @@ function paintHeadInner() {
   }
   if (c.type === "public") { $("#chatHead").innerHTML = `<div class="avatar public">ES</div><div class="t"><b>الغرفة العامة</b><small>محادثة مفتوحة لكل الأعضاء</small></div>`; return; }
   const u = S.users.get(c.peer) || {}, st = statusOf(u, c), ttl = c.doc && c.doc.ttl;
-  $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b><span class="nm">${esc(u.name || "مستخدم")}</span>${badge(u, 16)}${ttl ? `<span class="ttl-chip">${ttlLabel(ttl)}</span>` : ""}</b><small class="st ${st.cls}">${st.t ? esc(st.t) : "<bdi>@" + esc(u.username || "") + "</bdi>"}</small></div>`;
+  $("#chatHead").innerHTML = `<div class="av-wrap">${avatar(u)}${isOnline(u) ? `<i class="dot"></i>` : ""}</div><div class="t"><b><span class="nm">${esc(contactName(c.peer, u.name || "مستخدم"))}</span>${badge(u, 16)}${ttl ? `<span class="ttl-chip">${ttlLabel(ttl)}</span>` : ""}</b><small class="st ${st.cls}">${st.t ? esc(st.t) : "<bdi>@" + esc(u.username || "") + "</bdi>"}</small></div>`;
 }
 
 $("#callAudioBtn").onclick = () => startCall("audio");
@@ -1752,7 +1848,7 @@ function renderMsgsPlain(docs) {
       continue;
     }
     h += `<div class="msg ${mine ? "me" : "them"}${cont ? " cont" : ""}${m.deleted ? " gone" : ""}${m.sticker && !m.deleted && !m.text ? " stk" : ""}" data-mid="${esc(d.id)}">`
-      + (pub && !mine && !cont ? `<div class="who" data-uid="${esc(m.uid)}">${esc(sender.name || "مستخدم")}${badge(sender, 14)}</div>` : "")
+      + (pub && !mine && !cont ? `<div class="who" data-uid="${esc(m.uid)}">${esc(contactName(m.uid, sender.name || "مستخدم"))}${badge(sender, 14)}</div>` : "")
       + body + `<div class="tm">${stars.has(c.id + "/" + d.id) ? `<span class="star">${ic("star", 11, "fill")}</span>` : ""}<span>${fmtTime(dt)}</span>${tick}</div></div>`;
   }
   if (c._h !== h) { c._h = h; box.innerHTML = h; hydrateLinkCards(); if (near) box.scrollTop = box.scrollHeight; }
@@ -1855,7 +1951,7 @@ async function openMessageInfo(mid) {
     await ensureUsers(rs.map(x => x.uid));
     const list = rs.sort((a,b) => (toDate(b.at)?.getTime()||0)-(toDate(a.at)?.getTime()||0));
     sh.querySelector("#miLoad").textContent = list.length ? `تمت القراءة بواسطة ${list.length} مستخدم` : "لم يقرأها أحد حتى الآن";
-    sh.querySelector("#miList").innerHTML = list.slice(0, 100).map(x => { const u=S.users.get(x.uid)||{name:"مستخدم"}; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}</div><small>${fmtDT(x.at)}</small></div></div>`; }).join("");
+    sh.querySelector("#miList").innerHTML = list.slice(0, 100).map(x => { const u=S.users.get(x.uid)||{name:"مستخدم"}; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(contactName(x.uid, u.name))}</div><small>${fmtDT(x.at)}</small></div></div>`; }).join("");
   } catch (e) { sh.querySelector("#miLoad").textContent = "لا توجد معلومات متاحة أو لا تسمح قواعد الخصوصية بعرضها."; }
 }
 async function openChannelStats(g) {
@@ -1932,7 +2028,7 @@ function openMsgMenu(mid) {
   };
 }
 function openForward(payload) {
-  const dms = S.chats.filter(x => !S.prefs.block.includes(peerOf(x))).map(x => { const u = S.users.get(peerOf(x)) || {}; return { k: peerOf(x), av: avatar(u), n: u.name || "مستخدم" }; });
+  const dms = S.chats.filter(x => !S.prefs.block.includes(peerOf(x))).map(x => { const u = S.users.get(peerOf(x)) || {}; return { k: peerOf(x), av: avatar(u), n: contactName(peerOf(x), u.name || "مستخدم") }; });
   const gs = S.groups.filter(g => isGMember(g) && (g.kind === "group" || isGAdmin(g))).map(g => ({ k: "g:" + g.id, av: gAvatar(g), n: g.name }));
   const list = [...dms, ...gs];
   const sh = openModal(`<div class="menu"><div class="menu-h">إعادة توجيه إلى</div>${list.length ? list.map(x => `<button class="mrow" data-p="${esc(x.k)}"><span style="display:flex;align-items:center;gap:10px">${x.av}${esc(x.n)}</span></button>`).join("") : `<div class="empty-list">مفيش محادثات تبعتلها.</div>`}</div>`);
@@ -1990,7 +2086,7 @@ function openChatMenu(peer) {
   const rows = [["profile", "عرض البروفايل"], ["pin", P.pins.includes(id) ? "إلغاء تثبيت المحادثة" : "تثبيت المحادثة"],
     ["arch", P.arch.includes(id) ? "إلغاء الأرشفة" : "أرشفة المحادثة"], ["mute", P.mute.includes(id) ? "إلغاء كتم الإشعارات" : "كتم الإشعارات"],
     ["lbl", "مجلدات الدردشة"], ["deletechat", "حذف الشات من عندي", "إزالة فورية من قائمتك فقط", true], ["ttl", "الرسائل المختفية", ttl ? ttlLabel(ttl) : "إيقاف"], ["blk", P.block.includes(peer) ? "إلغاء حظر المستخدم" : "حظر المستخدم", "", true]];
-  const sh = openModal(`<div class="menu"><div class="menu-h">${esc(u.name || "محادثة")}</div>${rows.map(([a, t, v, dng]) => `<button class="mrow ${dng ? "danger" : ""}" data-a="${a}"><span>${t}</span>${v ? `<small>${v}</small>` : ""}</button>`).join("")}</div>`);
+  const sh = openModal(`<div class="menu"><div class="menu-h">${esc(contactName(peer, u.name || "محادثة"))}</div>${rows.map(([a, t, v, dng]) => `<button class="mrow ${dng ? "danger" : ""}" data-a="${a}"><span>${t}</span>${v ? `<small>${v}</small>` : ""}</button>`).join("")}</div>`);
   sh.querySelector(".menu").onclick = async e => {
     const b = e.target.closest("[data-a]"); if (!b) return; const a = b.dataset.a; closeModal();
     if (a === "profile") openProfile(peer);
@@ -2125,6 +2221,18 @@ async function getPeerCrypto(uid) {
   try { const s = await getDocs(query(collection(db, "users", uid, "crypto"), limit(1))); const d = s.docs[0]; if (!d) return null; const v = d.data(); peerCrypto.set(uid, v); return v; } catch { return null; }
 }
 async function notifyBotUpdate(groupId, messageId) { try { const t = await S.user.getIdToken(); await fetch("/api/bot-update", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ groupId, messageId }) }); } catch {} }
+// بعد ما نبعت رسالة مشفّرة لبوت (محادثة خاصة)، نقول للسيرفر يفكها بمفتاح البوت ويرد عليها بنفس التشفير.
+async function notifyBotPM(botUid, dmId, messageId) { try { const t = await S.user.getIdToken(); await fetch("/api/bot-pm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "process", botId: String(botUid).replace(/^bot_/, ""), dmId, messageId }) }); } catch {} }
+// فتح (أو إنشاء) محادثة خاصة مشفّرة مع بوت داخلي — botId اختياري: لو فاضي بيفتح/ينشئ بوت ESFather بتاعك.
+async function openBotPM(botId = "") {
+  try {
+    const t = await S.user.getIdToken();
+    const r = await fetch("/api/bot-pm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "open", botId }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(d.error || "تعذّر فتح البوت"); return; }
+    closeModal(); openChat(d.botUid);
+  } catch { toast("تعذّر فتح البوت"); }
+}
 function siteGate(c, payload) {
   const st = S.site || {}, deny = t => { toast(t); throw new Error("blocked"); };
   if (isOwner()) return;
@@ -2181,7 +2289,8 @@ async function sendTo(c, payload) {
     setDoc(doc(db, "chats", c.id), { members: [S.user.uid, c.peer].sort(), lastText: prev.slice(0, 80), lastAt: serverTimestamp(), lastUid: S.user.uid, typing: { [S.user.uid]: 0 } }, { merge: true }).catch(e => console.error(e));
     pushNotify(c.id, encryptedPrivate ? "رسالة جديدة" : prev);
   }
-  await wr;
+  const posted = await wr;
+  if (c.peer && c.peer.startsWith("bot_") && !String(S.user.uid).startsWith("bot_")) notifyBotPM(c.peer, c.id, posted.id);
 }
 function hideQuick() { $("#quickPop").classList.add("hidden"); $("#quickPop").innerHTML = ""; }
 function mentionSuggest() {
@@ -2193,7 +2302,7 @@ function mentionSuggest() {
     .map(uid => [uid, S.users.get(uid)])
     .filter(([, u]) => u && u.username && u.username.toLowerCase().startsWith(q)).slice(0, 8);
   if (!list.length) return false;
-  const pop = $("#quickPop"); pop.innerHTML = list.map(([uid, u], i) => `<button type="button" data-mention="${i}"><b>@${esc(u.username)}</b><span>${esc(u.name || uid)}</span></button>`).join("");
+  const pop = $("#quickPop"); pop.innerHTML = list.map(([uid, u], i) => `<button type="button" data-mention="${i}"><b>@${esc(u.username)}</b><span>${esc(contactName(uid, u.name || uid))}</span></button>`).join("");
   pop.classList.remove("hidden");
   pop.onclick = e => { const b = e.target.closest("[data-mention]"); if (!b) return; const u = list[+b.dataset.mention][1]; input.value = v.slice(0, m.index + (m[0].startsWith("@") ? 0 : m[0].length - m[1].length - 1)) + "@" + u.username + " "; hideQuick(); input.focus(); saveDraft(); };
   return true;
@@ -2847,12 +2956,12 @@ async function openGroupInfo(gid) {
   g._k = ""; if (member) { try { const sk = await getDoc(doc(db, "groups", gid, "secret", "invite")); g._k = sk.exists() ? sk.data().key : ""; } catch {} }
   const bans = admin ? (g.banned || []).slice(0, 50) : [];
   await ensureUsers([...ids, ...reqs, ...bans]);
-  const reqHtml = reqs.length ? `<div class="panel-h">طلبات الانضمام (${reqs.length})</div>` + reqs.map(id => { const u = S.users.get(id) || { name: "مستخدم" }; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div><div class="end"><button class="btn-mini" data-ok="${esc(id)}">قبول</button><button class="btn-danger sm" data-no="${esc(id)}">رفض</button></div></div>`; }).join("") : "";
-  const banHtml = bans.length ? `<div class="panel-h">الممنوعين (${bans.length})</div>` + bans.map(id => { const u = S.users.get(id) || { name: "مستخدم" }; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div><div class="end"><button class="btn-mini ghost" data-unban="${esc(id)}">رفع المنع</button></div></div>`; }).join("") : "";
+  const reqHtml = reqs.length ? `<div class="panel-h">طلبات الانضمام (${reqs.length})</div>` + reqs.map(id => { const u = S.users.get(id) || { name: "مستخدم" }; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(contactName(id, u.name))}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div><div class="end"><button class="btn-mini" data-ok="${esc(id)}">قبول</button><button class="btn-danger sm" data-no="${esc(id)}">رفض</button></div></div>`; }).join("") : "";
+  const banHtml = bans.length ? `<div class="panel-h">الممنوعين (${bans.length})</div>` + bans.map(id => { const u = S.users.get(id) || { name: "مستخدم" }; return `<div class="row-item">${avatar(u)}<div class="meta"><div class="name">${esc(contactName(id, u.name))}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div><div class="end"><button class="btn-mini ghost" data-unban="${esc(id)}">رفع المنع</button></div></div>`; }).join("") : "";
   const role = id => id === g.owner ? "المالك" : (g.admins || []).includes(id) ? "مشرف" : "";
   const rows = ids.map(id => { const u = S.users.get(id) || { name: "مستخدم" }, r = role(id);
     const canRm = admin && id !== g.owner && id !== me && (owner || !(g.admins || []).includes(id));
-    return `<div class="row-item" data-u="${esc(id)}">${avatar(u)}<div class="meta"><div class="name">${esc(u.name)}${badge(u, 14)}${r ? ` <span class="chip sm ${r === "المالك" ? "owner" : ""}">${r}</span>` : ""}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div>
+    return `<div class="row-item" data-u="${esc(id)}">${avatar(u)}<div class="meta"><div class="name">${esc(contactName(id, u.name))}${badge(u, 14)}${r ? ` <span class="chip sm ${r === "المالك" ? "owner" : ""}">${r}</span>` : ""}</div><small><bdi>@${esc(u.username || "")}</bdi></small></div>
       <div class="end">${owner && id !== me ? `<button class="btn-mini ghost" data-pro="${esc(id)}">${(g.admins || []).includes(id) ? "إلغاء الإشراف" : "ترقية"}</button>` : ""}${admin && !ch && canRm && !(g.admins || []).includes(id) ? `<button class="btn-mini ghost" data-mu="${esc(id)}">${g.muted && +g.muted[id] > Date.now() ? "إلغاء الكتم" : "كتم"}</button>` : ""}${canRm ? `<button class="btn-danger sm" data-rm="${esc(id)}">إزالة</button>` : ""}</div></div>`; }).join("");
   const sh = openModal(`<div class="prof">${gAvatar(g, "big")}<h3>${esc(g.name)}</h3>
       <div class="chips"><span class="chip">${ch ? "قناة" : "مجموعة"}</span><span class="chip">${gCount(g)}</span>${g.handle ? `<span class="chip"><bdi>#${esc(g.handle)}</bdi></span>` : ""}</div>
@@ -2943,7 +3052,7 @@ async function openGroupInfo(gid) {
       const id = mu.dataset.mu, f = "muted." + id;
       if (g.muted && +g.muted[id] > Date.now()) return up({ [f]: deleteField() });
       const opts = [[86400000, "24 ساعة"], [604800000, "7 أيام"]];
-      const m2 = openModal(`<div class="menu"><div class="menu-h">كتم ${esc((S.users.get(id) || {}).name || "العضو")}</div><p class="sub" style="margin:0 4px 8px">مش هيقدر يبعت رسايل للمدة دي.</p>${opts.map(([ms, t]) => `<button class="mrow" data-ms="${ms}"><span>${t}</span></button>`).join("")}</div>`);
+      const m2 = openModal(`<div class="menu"><div class="menu-h">كتم ${esc(contactName(id, (S.users.get(id) || {}).name || "العضو"))}</div><p class="sub" style="margin:0 4px 8px">مش هيقدر يبعت رسايل للمدة دي.</p>${opts.map(([ms, t]) => `<button class="mrow" data-ms="${ms}"><span>${t}</span></button>`).join("")}</div>`);
       m2.querySelector(".menu").onclick = async ev => { const b = ev.target.closest("[data-ms]"); if (!b) return; try { await updateDoc(doc(db, "groups", gid), { [f]: Date.now() + +b.dataset.ms }); toast("اتكتم"); } catch { toast("تعذّر الكتم"); } openGroupInfo(gid); };
       return;
     }
@@ -3043,10 +3152,11 @@ async function openProfile(uid, opts = {}) {
   let u = S.users.get(uid);
   if (!u) { try { const s = await getDoc(doc(db, "users", uid)); u = s.exists() ? s.data() : null; } catch {} }
   if (!u) return toast("البروفايل مش موجود");
-  const self = uid === S.user.uid, own = isOwner();
+  const self = uid === S.user.uid, own = isOwner(), savedAs = contactName(uid, "");
   const sh = openModal(`<div class="prof">
     ${avatar(u)}
-    <h3>${esc(u.name)}${badge(u, 22)}</h3>
+    <h3>${esc(savedAs || u.name)}${badge(u, 22)}</h3>
+    ${savedAs && savedAs !== u.name ? `<div class="un">الاسم على الموقع: ${esc(u.name)}</div>` : ""}
     <div class="un"><bdi>@${esc(u.username || "—")}</bdi></div>
     ${isOfficial(uid) ? `<div class="official-card">${ownerBadge(22)}<div><b>الحساب الرسمي</b><small>ده الحساب الرسمي لصاحب ES Chat Pro</small></div></div>` : ""}
     <div class="chips">${u.role === "owner" || isOfficial(uid) ? `<span class="chip owner">${CROWN} المالك · حساب رسمي</span>` : ""}<span class="chip">${genderText(u.gender)}</span>${u.banned ? `<span class="tag-ban">موقوف</span>` : ""}</div>
