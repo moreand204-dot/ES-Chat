@@ -639,6 +639,7 @@ function renderForm(root, mode) {
         await setDoc(doc(db, "users", S.user.uid, "public", "profile"), { uid: S.user.uid, name, gender, bio: b, photo, username: un }, { merge: true });
         syncPublicProfile(S.user.uid); closeModal(); toast(un !== oldUn ? "تم حفظ البروفايل وتغيير اسم المستخدم" : "اتحفظت التعديلات");
       } else {
+        const batch = writeBatch(db);
         batch.set(doc(db, "usernames", un), { uid: S.user.uid });
         batch.update(doc(db, "users", S.user.uid), { name, gender, bio: b, photo, username: un, onboarded: true });
         await batch.commit();
@@ -2222,12 +2223,13 @@ async function getPeerCrypto(uid) {
 }
 async function notifyBotUpdate(groupId, messageId) { try { const t = await S.user.getIdToken(); await fetch("/api/bot-update", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ groupId, messageId }) }); } catch {} }
 // بعد ما نبعت رسالة مشفّرة لبوت (محادثة خاصة)، نقول للسيرفر يفكها بمفتاح البوت ويرد عليها بنفس التشفير.
-async function notifyBotPM(botUid, dmId, messageId) { try { const t = await S.user.getIdToken(); await fetch("/api/bot-pm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "process", botId: String(botUid).replace(/^bot_/, ""), dmId, messageId }) }); } catch {} }
+async function notifyBotPM(botUid, dmId, messageId) { try { const t = await S.user.getIdToken(); await fetch("/api/bot", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "pmProcess", botId: String(botUid).replace(/^bot_/, ""), dmId, messageId }) }); } catch {} }
 // فتح (أو إنشاء) محادثة خاصة مشفّرة مع بوت داخلي — botId اختياري: لو فاضي بيفتح/ينشئ بوت ESFather بتاعك.
+// (الفعل ده مدموج جوه /api/bot.js نفسه عشان ميزيدش عدد الـ Serverless Functions على Vercel Hobby)
 async function openBotPM(botId = "") {
   try {
     const t = await S.user.getIdToken();
-    const r = await fetch("/api/bot-pm", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "open", botId }) });
+    const r = await fetch("/api/bot", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ action: "pmOpen", botId }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { toast(d.error || "تعذّر فتح البوت"); return; }
     closeModal(); openChat(d.botUid);
