@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const { deliverWebhook } = require("./_bot-webhook");
 const { readBotStats } = require("./_bot-stats");
 const { validPublicHttpsUrl } = require("./_net-guard");
+const { generateBotDevice, publicBundleOf, sealPrivateDevice, openPrivateDevice, decryptForBot, encryptFromBot } = require("./_bot-e2ee");
 function init() {
   if (admin.apps.length) return;
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) throw Object.assign(new Error("FIREBASE_SERVICE_ACCOUNT is not set"), { code: "env-missing" });
@@ -145,6 +146,59 @@ module.exports = async (req, res) => {
       const oldSettings = b.settings || {}, next = { inline: action === "setinline" ? body.enabled === true : action === "setinlinegeo" ? oldSettings.inlineGeo : oldSettings.inline, inlineGeo: action === "setinlinegeo" ? body.enabled === true : oldSettings.inlineGeo, joinGroups: action === "setjoingroups" ? body.enabled !== false : oldSettings.joinGroups !== false, privacy: action === "setprivacy" ? body.enabled !== false : oldSettings.privacy !== false };
       if (action === "setsettings") Object.assign(next, { inline: body.inline === true, inlineGeo: body.inlineGeo === true, joinGroups: body.joinGroups !== false, privacy: body.privacy !== false });
       await ref.update({ settings: next }); return send(res, 200, { ok: true, settings: next });
+    }
+    // محادثة خاصة مشفّرة (E2EE) مع بوت — مدموجة هنا (مش ملف /api منفصل) عشان ميزيدش عدد
+    // الـ Serverless Functions على باقة Vercel Hobby (أقصى حد 12).
+    if (action === "pmOpen") {
+      const u = await userFrom(req); if (!u) return send(res, 401, { error: "user auth required" });
+      let bid = text(body.botId, 80), botSnap;
+      if (bid) {
+        botSnap = await db.doc(`bots/${bid}`).get();
+        if (!botSnap.exists || botSnap.data().owner !== u.uid || botSnap.data().deleted) return send(res, 404, { error: "bot not found" });
+      } else {
+        const existing = await db.collection("bots").where("owner", "==", u.uid).where("name", "==", "ESFather").limit(1).get();
+        if (!existing.empty) { botSnap = existing.docs[0]; bid = botSnap.id; }
+        else {
+          bid = id(); const raw = makeToken(bid), h = hash(raw), botUid = `bot_${bid}`, now = admin.firestore.FieldValue.serverTimestamp();
+          await db.doc(`bots/${bid}`).set({ owner: u.uid, name: "ESFather", nameAr: "ESFather", nameEn: "ESFather", botUid, active: true, tokenHash: h, tokenPrefix: raw.slice(0, 18), createdAt: now, groups: [], commands: [], settings: { inline: false, inlineGeo: false, joinGroups: true, privacy: true, allowPM: true } });
+          await db.doc(`botSecrets/${h}`).set({ botId: bid, owner: u.uid, active: true, createdAt: now });
+          await db.doc(`users/${botUid}/public/profile`).set({ uid: botUid, name: "ESFather", photo: "", gender: "male", bio: "بوت موقعك الخاص — ESFather", username: bid, verified: true }, { merge: true });
+          botSnap = await db.doc(`bots/${bid}`).get();
+        }
+      }
+      const bd = botSnap.data(), botUid = bd.botUid || `bot_${bid}`;
+      const secureRef = db.doc(`bots/${bid}/secure/e2ee`); const secureSnap = await secureRef.get();
+      if (secureSnap.exists) {
+        const priv = await openPrivateDevice(secureSnap.data().sealed, bid);
+        await db.doc(`users/${botUid}/crypto/${priv.deviceId}`).set(publicBundleOf(priv), { merge: true });
+      } else {
+        const priv = await generateBotDevice(); const sealed = await sealPrivateDevice(priv, bid);
+        await secureRef.set({ sealed, deviceId: priv.deviceId, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+        await db.doc(`users/${botUid}/crypto/${priv.deviceId}`).set(publicBundleOf(priv), { merge: true });
+      }
+      return send(res, 200, { botId: bid, botUid });
+    }
+    if (action === "pmProcess") {
+      const u = await userFrom(req); if (!u) return send(res, 401, { error: "user auth required" });
+      const bid = text(body.botId, 80), dmId = text(body.dmId, 160), messageId = text(body.messageId, 80);
+      const botSnap = await db.doc(`bots/${bid}`).get(); if (!botSnap.exists || botSnap.data().deleted) return send(res, 404, { error: "bot not found" });
+      const bd = botSnap.data(), botUid = bd.botUid || `bot_${bid}`;
+      if (bd.active !== true) return send(res, 200, { skipped: "inactive" });
+      if (dmId !== [u.uid, botUid].sort().join("_")) return send(res, 403, { error: "dm mismatch" });
+      const secureSnap = await db.doc(`bots/${bid}/secure/e2ee`).get(); if (!secureSnap.exists) return send(res, 200, { skipped: "pm-not-enabled" });
+      const msgSnap = await db.doc(`chats/${dmId}/messages/${messageId}`).get(); if (!msgSnap.exists) return send(res, 404, { error: "message not found" });
+      const md = msgSnap.data(); if (md.uid !== u.uid || !md.cipher) return send(res, 200, { skipped: "not-applicable" });
+      const priv = await openPrivateDevice(secureSnap.data().sealed, bid);
+      let plain; try { plain = await decryptForBot(md.cipher, priv); } catch (e) { console.error("decryptForBot failed", e); plain = null; }
+      if (!plain) return send(res, 200, { skipped: "decrypt-failed" });
+      const userCryptoSnap = await db.collection(`users/${u.uid}/crypto`).limit(1).get(); if (userCryptoSnap.empty) return send(res, 200, { skipped: "peer-key-missing" });
+      const t = String(plain.text || "").trim(), cmdM = /^\/([a-z0-9_]{1,32})/i.exec(t), cmd = cmdM ? cmdM[1].toLowerCase() : "";
+      const BUILTIN = { start: "أهلاً بيك 👋 أنا ESFather، بوت موقعك الخاص. اكتب /help عشان تشوف الأوامر المتاحة.", help: "الأوامر المتاحة:\n/start — ابدأ من جديد\n/help — عرض المساعدة\n/ping — تأكيد إن البوت شغّال", ping: "pong 🏓" };
+      const replyText = BUILTIN[cmd] || (!t ? BUILTIN.start : `استلمت رسالتك: "${t.slice(0, 200)}"\n(رد تلقائي مبدئي من ESFather — اربط Webhook للبوت من "مدير البوتات" عشان تتحكم في الردود بنفسك)`);
+      const cipher = await encryptFromBot({ text: replyText }, userCryptoSnap.docs[0].data(), priv);
+      await db.collection(`chats/${dmId}/messages`).add({ uid: botUid, at: admin.firestore.FieldValue.serverTimestamp(), cipher });
+      await db.doc(`chats/${dmId}`).set({ members: [u.uid, botUid].sort(), lastText: "🔒 رسالة مشفّرة", lastAt: admin.firestore.FieldValue.serverTimestamp(), lastUid: botUid }, { merge: true });
+      return send(res, 200, { replied: true });
     }
     const bot = await botFrom(db, req); if (!bot) return send(res, 401, { error: "invalid bot token" });
     if (action === "addToGroup") {
